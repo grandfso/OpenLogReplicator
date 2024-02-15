@@ -73,6 +73,7 @@ namespace OpenLogReplicator {
             bigEndian(false),
             memoryMinMb(0),
             memoryMaxMb(0),
+            memorySwapMb(0),
             memoryChunks(nullptr),
             memoryChunksMin(0),
             memoryChunksAllocated(0),
@@ -580,9 +581,10 @@ namespace OpenLogReplicator {
         };
     }
 
-    void Ctx::initialize(uint64_t newMemoryMinMb, uint64_t newMemoryMaxMb, uint64_t newReadBufferMax) {
+    void Ctx::initialize(uint64_t newMemoryMinMb, uint64_t newMemoryMaxMb, uint64_t newMemorySwapMb, uint64_t newReadBufferMax) {
         memoryMinMb = newMemoryMinMb;
         memoryMaxMb = newMemoryMaxMb;
+        memorySwapMb = newMemorySwapMb;
         memoryChunksMin = (memoryMinMb / MEMORY_CHUNK_SIZE_MB);
         memoryChunksMax = memoryMaxMb / MEMORY_CHUNK_SIZE_MB;
         readBufferMax = newReadBufferMax;
