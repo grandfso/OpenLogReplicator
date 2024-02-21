@@ -113,6 +113,10 @@ along with OpenLogReplicator; see the file LICENSE;  If not see
 #define UNIX_AD9999_12_31                       253402300799L
 #define BAD_TIMEZONE                            0x7FFFFFFFFFFFFFFF
 
+//#define map10(x)                                ('0'+static_cast<char>(x))
+//#define map16(x)                                (((x)<10)?('0'+static_cast<char>(x)):('a'-10+static_cast<char>(x)))
+//#define map16U(x)                               (((x)<10)?('0'+static_cast<char>(x)):('A'-10+static_cast<char>(x)))
+
 #ifndef GLOBALS
 extern uint64_t OLR_LOCALES;
 #endif
@@ -161,8 +165,6 @@ namespace OpenLogReplicator {
         }
 
     public:
-        static const char map16[17];
-        static const char map16U[17];
         static const char map64[65];
         static const char map64R[256];
         static const std::string memoryModules[MEMORY_MODULES_NUM];
@@ -228,6 +230,24 @@ namespace OpenLogReplicator {
 
         Ctx();
         virtual ~Ctx();
+
+        static inline char map10(uint64_t x) {
+            return static_cast<char>('0' + x);
+        }
+
+        static inline char map16(uint64_t x) {
+            if (x < 10)
+                return static_cast<char>('0' + x);
+            else
+                return static_cast<char>('a' + (x - 10));
+        }
+
+        static inline char map16U(uint64_t x) {
+            if (x < 10)
+                return static_cast<char>('0' + x);
+            else
+                return static_cast<char>('A' + (x - 10));
+        }
 
         inline uint16_t read16(const uint8_t* buf) const {
             if (bigEndian)
