@@ -117,7 +117,7 @@ namespace OpenLogReplicator {
         appendEscape(columnName);
         append(R"(":")", sizeof(R"(":")") - 1);
         for (uint64_t j = 0; j < length; ++j)
-            appendHex(*(data + j), 2);
+            appendHex2(*(data + j));
         append('"');
     }
 
@@ -563,6 +563,11 @@ namespace OpenLogReplicator {
         }
 
         append(R"({"op":"c",)", sizeof(R"({"op":"c",)") - 1);
+        if ((messageFormat & MESSAGE_FORMAT_ADD_OFFSET) != 0) {
+            append(R"("offset":)", sizeof(R"("offset":)") - 1);
+            appendDec(offset);
+            append(',');
+        }
         appendSchema(table, obj);
         appendRowid(dataObj, bdba, slot);
         appendAfter(lobCtx, xmlCtx, table, offset);
@@ -603,6 +608,11 @@ namespace OpenLogReplicator {
         }
 
         append(R"({"op":"u",)", sizeof(R"({"op":"u",)") - 1);
+        if ((messageFormat & MESSAGE_FORMAT_ADD_OFFSET) != 0) {
+            append(R"("offset":)", sizeof(R"("offset":)") - 1);
+            appendDec(offset);
+            append(',');
+        }
         appendSchema(table, obj);
         appendRowid(dataObj, bdba, slot);
         appendBefore(lobCtx, xmlCtx, table, offset);
@@ -644,6 +654,11 @@ namespace OpenLogReplicator {
         }
 
         append(R"({"op":"d",)", sizeof(R"({"op":"d",)") - 1);
+        if ((messageFormat & MESSAGE_FORMAT_ADD_OFFSET) != 0) {
+            append(R"("offset":)", sizeof(R"("offset":)") - 1);
+            appendDec(offset);
+            append(',');
+        }
         appendSchema(table, obj);
         appendRowid(dataObj, bdba, slot);
         appendBefore(lobCtx, xmlCtx, table, offset);
