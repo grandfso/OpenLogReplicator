@@ -37,32 +37,32 @@ namespace OpenLogReplicator {
         inline void columnNull(const OracleTable* table, typeCol col, bool after) {
             if (table != nullptr && unknownType == UNKNOWN_TYPE_HIDE) {
                 const OracleColumn* column = table->columns[col];
-                if (column->guard && !FLAG(REDO_FLAGS_SHOW_GUARD_COLUMNS))
+                if (column->guard && !ctx->flagsSet(Ctx::REDO_FLAGS_SHOW_GUARD_COLUMNS))
                     return;
-                if (column->nested && !FLAG(REDO_FLAGS_SHOW_NESTED_COLUMNS))
+                if (column->nested && !ctx->flagsSet(Ctx::REDO_FLAGS_SHOW_NESTED_COLUMNS))
                     return;
-                if (column->hidden && !FLAG(REDO_FLAGS_SHOW_HIDDEN_COLUMNS))
+                if (column->hidden && !ctx->flagsSet(Ctx::REDO_FLAGS_SHOW_HIDDEN_COLUMNS))
                     return;
-                if (column->unused && !FLAG(REDO_FLAGS_SHOW_UNUSED_COLUMNS))
+                if (column->unused && !ctx->flagsSet(Ctx::REDO_FLAGS_SHOW_UNUSED_COLUMNS))
                     return;
 
                 uint64_t typeNo = table->columns[col]->type;
-                if (typeNo != SYS_COL_TYPE_VARCHAR
-                    && typeNo != SYS_COL_TYPE_NUMBER
-                    && typeNo != SYS_COL_TYPE_DATE
-                    && typeNo != SYS_COL_TYPE_RAW
-                    && typeNo != SYS_COL_TYPE_CHAR
-                    && typeNo != SYS_COL_TYPE_FLOAT
-                    && typeNo != SYS_COL_TYPE_DOUBLE
-                    && (typeNo != SYS_COL_TYPE_XMLTYPE || !after)
-                    && (typeNo != SYS_COL_TYPE_JSON || !after)
-                    && (typeNo != SYS_COL_TYPE_CLOB || !after)
-                    && (typeNo != SYS_COL_TYPE_BLOB || !after)
-                    && typeNo != SYS_COL_TYPE_TIMESTAMP
-                    && typeNo != SYS_COL_TYPE_INTERVAL_YEAR_TO_MONTH
-                    && typeNo != SYS_COL_TYPE_INTERVAL_DAY_TO_SECOND
-                    && typeNo != SYS_COL_TYPE_UROWID
-                    && typeNo != SYS_COL_TYPE_TIMESTAMP_WITH_LOCAL_TZ)
+                if (typeNo != SysCol::TYPE_VARCHAR
+                    && typeNo != SysCol::TYPE_NUMBER
+                    && typeNo != SysCol::TYPE_DATE
+                    && typeNo != SysCol::TYPE_RAW
+                    && typeNo != SysCol::TYPE_CHAR
+                    && typeNo != SysCol::TYPE_FLOAT
+                    && typeNo != SysCol::TYPE_DOUBLE
+                    && (typeNo != SysCol::TYPE_XMLTYPE || !after)
+                    && (typeNo != SysCol::TYPE_JSON || !after)
+                    && (typeNo != SysCol::TYPE_CLOB || !after)
+                    && (typeNo != SysCol::TYPE_BLOB || !after)
+                    && typeNo != SysCol::TYPE_TIMESTAMP
+                    && typeNo != SysCol::TYPE_INTERVAL_YEAR_TO_MONTH
+                    && typeNo != SysCol::TYPE_INTERVAL_DAY_TO_SECOND
+                    && typeNo != SysCol::TYPE_UROWID
+                    && typeNo != SysCol::TYPE_TIMESTAMP_WITH_LOCAL_TZ)
                     return;
             }
 
@@ -359,83 +359,83 @@ namespace OpenLogReplicator {
 
                     append(R"(","type":)", sizeof(R"(","type":)") - 1);
                     switch (table->columns[column]->type) {
-                        case SYS_COL_TYPE_VARCHAR:
+                        case SysCol::TYPE_VARCHAR:
                             append(R"("varchar2","length":)", sizeof(R"("varchar2","length":)") - 1);
                             appendDec(table->columns[column]->length);
                             break;
 
-                        case SYS_COL_TYPE_NUMBER:
+                        case SysCol::TYPE_NUMBER:
                             append(R"("number","precision":)", sizeof(R"("number","precision":)") - 1);
                             appendSDec(table->columns[column]->precision);
                             append(R"(,"scale":)", sizeof(R"(,"scale":)") - 1);
                             appendSDec(table->columns[column]->scale);
                             break;
 
-                        case SYS_COL_TYPE_LONG:
+                        case SysCol::TYPE_LONG:
                             // Long, not supported
                             append(R"("long")", sizeof(R"("long")") - 1);
                             break;
 
-                        case SYS_COL_TYPE_DATE:
+                        case SysCol::TYPE_DATE:
                             append(R"("date")", sizeof(R"("date")") - 1);
                             break;
 
-                        case SYS_COL_TYPE_RAW:
+                        case SysCol::TYPE_RAW:
                             append(R"("raw","length":)", sizeof(R"("raw","length":)") - 1);
                             appendDec(table->columns[column]->length);
                             break;
 
-                        case SYS_COL_TYPE_LONG_RAW: // Not supported
+                        case SysCol::TYPE_LONG_RAW: // Not supported
                             append(R"("long raw")", sizeof(R"("long raw")") - 1);
                             break;
 
-                        case SYS_COL_TYPE_CHAR:
+                        case SysCol::TYPE_CHAR:
                             append(R"("char","length":)", sizeof(R"("char","length":)") - 1);
                             appendDec(table->columns[column]->length);
                             break;
 
-                        case SYS_COL_TYPE_FLOAT:
+                        case SysCol::TYPE_FLOAT:
                             append(R"("binary_float")", sizeof(R"("binary_float")") - 1);
                             break;
 
-                        case SYS_COL_TYPE_DOUBLE:
+                        case SysCol::TYPE_DOUBLE:
                             append(R"("binary_double")", sizeof(R"("binary_double")") - 1);
                             break;
 
-                        case SYS_COL_TYPE_CLOB:
+                        case SysCol::TYPE_CLOB:
                             append(R"("clob")", sizeof(R"("clob")") - 1);
                             break;
 
-                        case SYS_COL_TYPE_BLOB:
+                        case SysCol::TYPE_BLOB:
                             append(R"("blob")", sizeof(R"("blob")") - 1);
                             break;
 
-                        case SYS_COL_TYPE_TIMESTAMP:
+                        case SysCol::TYPE_TIMESTAMP:
                             append(R"("timestamp","length":)", sizeof(R"("timestamp","length":)") - 1);
                             appendDec(table->columns[column]->length);
                             break;
 
-                        case SYS_COL_TYPE_TIMESTAMP_WITH_TZ:
+                        case SysCol::TYPE_TIMESTAMP_WITH_TZ:
                             append(R"("timestamp with time zone","length":)", sizeof(R"("timestamp with time zone","length":)") - 1);
                             appendDec(table->columns[column]->length);
                             break;
 
-                        case SYS_COL_TYPE_INTERVAL_YEAR_TO_MONTH:
+                        case SysCol::TYPE_INTERVAL_YEAR_TO_MONTH:
                             append(R"("interval year to month","length":)", sizeof(R"("interval year to month","length":)") - 1);
                             appendDec(table->columns[column]->length);
                             break;
 
-                        case SYS_COL_TYPE_INTERVAL_DAY_TO_SECOND:
+                        case SysCol::TYPE_INTERVAL_DAY_TO_SECOND:
                             append(R"("interval day to second","length":)", sizeof(R"("interval day to second","length":)") - 1);
                             appendDec(table->columns[column]->length);
                             break;
 
-                        case SYS_COL_TYPE_UROWID:
+                        case SysCol::TYPE_UROWID:
                             append(R"("urowid","length":)", sizeof(R"("urowid","length":)") - 1);
                             appendDec(table->columns[column]->length);
                             break;
 
-                        case SYS_COL_TYPE_TIMESTAMP_WITH_LOCAL_TZ:
+                        case SysCol::TYPE_TIMESTAMP_WITH_LOCAL_TZ:
                             append(R"("timestamp with local time zone","length":)", sizeof(R"("timestamp with local time zone","length":)") - 1);
                             appendDec(table->columns[column]->length);
                             break;
@@ -507,83 +507,83 @@ namespace OpenLogReplicator {
             append(Ctx::map16(value & 0xF));
         }
 
-        inline void appendDec(uint64_t value, uint64_t length) {
+        inline void appendDec(uint64_t value, uint64_t size) {
             char buffer[21];
 
-            for (uint64_t i = 0; i < length; ++i) {
+            for (uint64_t i = 0; i < size; ++i) {
                 buffer[i] = Ctx::map10(value % 10);
                 value /= 10;
             }
 
-            if (lastBuilderQueue->length + messagePosition + length < OUTPUT_BUFFER_DATA_SIZE) {
-                uint8_t *ptr = lastBuilderQueue->data + lastBuilderQueue->length + messagePosition;
-                for (uint64_t i = 0; i < length; ++i)
-                    *ptr++ = buffer[length - i - 1];
-                messagePosition += length;
+            if (likely(lastBuilderQueue->size + messagePosition + size < OUTPUT_BUFFER_DATA_SIZE)) {
+                uint8_t *ptr = lastBuilderQueue->data + lastBuilderQueue->size + messagePosition;
+                for (uint64_t i = 0; i < size; ++i)
+                    *ptr++ = buffer[size - i - 1];
+                messagePosition += size;
             } else {
-                for (uint64_t i = 0; i < length; ++i)
-                    append(buffer[length - i - 1]);
+                for (uint64_t i = 0; i < size; ++i)
+                    append(buffer[size - i - 1]);
             }
         }
 
         inline void appendDec(uint64_t value) {
             char buffer[21];
-            uint64_t length = 0;
+            uint64_t size = 0;
 
             if (value == 0) {
                 buffer[0] = '0';
-                length = 1;
+                size = 1;
             } else {
                 while (value > 0) {
-                    buffer[length++] = Ctx::map10(value % 10);
+                    buffer[size++] = Ctx::map10(value % 10);
                     value /= 10;
                 }
             }
 
-            if (lastBuilderQueue->length + messagePosition + length < OUTPUT_BUFFER_DATA_SIZE) {
-                uint8_t* ptr = lastBuilderQueue->data + lastBuilderQueue->length + messagePosition;
-                for (uint64_t i = 0; i < length; ++i)
-                    *ptr++ = buffer[length - i - 1];
-                messagePosition += length;
+            if (likely(lastBuilderQueue->size + messagePosition + size < OUTPUT_BUFFER_DATA_SIZE)) {
+                uint8_t* ptr = lastBuilderQueue->data + lastBuilderQueue->size + messagePosition;
+                for (uint64_t i = 0; i < size; ++i)
+                    *ptr++ = buffer[size - i - 1];
+                messagePosition += size;
             } else {
-                for (uint64_t i = 0; i < length; ++i)
-                    append(buffer[length - i - 1]);
+                for (uint64_t i = 0; i < size; ++i)
+                    append(buffer[size - i - 1]);
             }
         }
 
         inline void appendSDec(int64_t value) {
             char buffer[22];
-            uint64_t length = 0;
+            uint64_t size = 0;
 
             if (value == 0) {
                 buffer[0] = '0';
-                length = 1;
+                size = 1;
             } else {
                 if (value < 0) {
                     value = -value;
                     while (value > 0) {
-                        buffer[length++] = Ctx::map10(value % 10);
+                        buffer[size++] = Ctx::map10(value % 10);
                         value /= 10;
                     }
-                    buffer[length++] = '-';
+                    buffer[size++] = '-';
                 } else {
                     while (value > 0) {
-                        buffer[length++] = Ctx::map10(value % 10);
+                        buffer[size++] = Ctx::map10(value % 10);
                         value /= 10;
                     }
                 }
             }
 
-            for (uint64_t i = 0; i < length; ++i)
-                append(buffer[length - i - 1]);
+            for (uint64_t i = 0; i < size; ++i)
+                append(buffer[size - i - 1]);
         }
 
         inline void appendEscape(const std::string& str) {
             appendEscape(str.c_str(), str.length());
         }
 
-        inline void appendEscape(const char* str, uint64_t length) {
-            while (length > 0) {
+        inline void appendEscape(const char* str, uint64_t size) {
+            while (size > 0) {
                 if (*str == '\t') {
                     append("\\t", sizeof("\\t") - 1);
                 } else if (*str == '\r') {
@@ -603,7 +603,7 @@ namespace OpenLogReplicator {
                     append(*str);
                 }
                 ++str;
-                --length;
+                --size;
             }
         }
 
@@ -614,8 +614,8 @@ namespace OpenLogReplicator {
             if (columnFormat > 0 && table != nullptr) {
                 for (typeCol column = 0; column < table->maxSegCol; ++column) {
                     if (values[column][VALUE_AFTER] != nullptr) {
-                        if (lengths[column][VALUE_AFTER] > 0)
-                            processValue(lobCtx, xmlCtx, table, column, values[column][VALUE_AFTER], lengths[column][VALUE_AFTER], offset, true,
+                        if (sizes[column][VALUE_AFTER] > 0)
+                            processValue(lobCtx, xmlCtx, table, column, values[column][VALUE_AFTER], sizes[column][VALUE_AFTER], offset, true,
                                          compressedAfter);
                         else
                             columnNull(table, column, true);
@@ -632,8 +632,8 @@ namespace OpenLogReplicator {
                             continue;
 
                         if (values[column][VALUE_AFTER] != nullptr) {
-                            if (lengths[column][VALUE_AFTER] > 0)
-                                processValue(lobCtx, xmlCtx, table, column, values[column][VALUE_AFTER], lengths[column][VALUE_AFTER], offset,
+                            if (sizes[column][VALUE_AFTER] > 0)
+                                processValue(lobCtx, xmlCtx, table, column, values[column][VALUE_AFTER], sizes[column][VALUE_AFTER], offset,
                                              true, compressedAfter);
                             else
                                 columnNull(table, column, true);
@@ -651,8 +651,8 @@ namespace OpenLogReplicator {
             if (columnFormat > 0 && table != nullptr) {
                 for (typeCol column = 0; column < table->maxSegCol; ++column) {
                     if (values[column][VALUE_BEFORE] != nullptr) {
-                        if (lengths[column][VALUE_BEFORE] > 0)
-                            processValue(lobCtx, xmlCtx, table, column, values[column][VALUE_BEFORE], lengths[column][VALUE_BEFORE], offset,
+                        if (sizes[column][VALUE_BEFORE] > 0)
+                            processValue(lobCtx, xmlCtx, table, column, values[column][VALUE_BEFORE], sizes[column][VALUE_BEFORE], offset,
                                          false, compressedBefore);
                         else
                             columnNull(table, column, false);
@@ -669,8 +669,8 @@ namespace OpenLogReplicator {
                             continue;
 
                         if (values[column][VALUE_BEFORE] != nullptr) {
-                            if (lengths[column][VALUE_BEFORE] > 0)
-                                processValue(lobCtx, xmlCtx, table, column, values[column][VALUE_BEFORE], lengths[column][VALUE_BEFORE], offset,
+                            if (sizes[column][VALUE_BEFORE] > 0)
+                                processValue(lobCtx, xmlCtx, table, column, values[column][VALUE_BEFORE], sizes[column][VALUE_BEFORE], offset,
                                              false, compressedBefore);
                             else
                                 columnNull(table, column, false);
@@ -686,7 +686,7 @@ namespace OpenLogReplicator {
         virtual void columnDouble(const std::string& columnName, long double value) override;
         virtual void columnString(const std::string& columnName) override;
         virtual void columnNumber(const std::string& columnName, uint64_t precision, uint64_t scale) override;
-        virtual void columnRaw(const std::string& columnName, const uint8_t* data, uint64_t length) override;
+        virtual void columnRaw(const std::string& columnName, const uint8_t* data, uint64_t size) override;
         virtual void columnRowId(const std::string& columnName, typeRowId rowId) override;
         virtual void columnTimestamp(const std::string& columnName, time_t timestamp, uint64_t fraction) override;
         virtual void columnTimestampTz(const std::string& columnName, time_t timestamp, uint64_t fraction, const char* tz) override;
@@ -697,7 +697,7 @@ namespace OpenLogReplicator {
         virtual void processDelete(typeScn scn, typeSeq sequence, time_t timestamp, LobCtx* lobCtx, const XmlCtx* xmlCtx, const OracleTable* table, typeObj obj,
                                    typeDataObj dataObj, typeDba bdba, typeSlot slot, typeXid xid, uint64_t offset) override;
         virtual void processDdl(typeScn scn, typeSeq sequence, time_t timestamp, const OracleTable* table, typeObj obj, typeDataObj dataObj, uint16_t type,
-                                uint16_t seq, const char* sql, uint64_t sqlLength) override;
+                                uint16_t seq, const char* sql, uint64_t sqlSize) override;
         virtual void processBeginMessage(typeScn scn, typeSeq sequence, time_t timestamp) override;
 
     public:

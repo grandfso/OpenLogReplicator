@@ -23,20 +23,21 @@ along with OpenLogReplicator; see the file LICENSE;  If not see
 #ifndef CHARACTER_SET_H_
 #define CHARACTER_SET_H_
 
-#define UNICODE_UNKNOWN_CHARACTER           0xFFFD
-#define MAX_CHARACTER_LENGTH                8
-
 namespace OpenLogReplicator {
     class Ctx;
 
     class CharacterSet {
+    public:
+        static constexpr uint64_t MAX_CHARACTER_LENGTH = 8;
+        static constexpr uint64_t UNICODE_UNKNOWN_CHARACTER = 0xFFFD;
+
     protected:
-        [[nodiscard]] uint64_t badChar(Ctx* ctx, typeXid xid, uint64_t byte1) const;
-        [[nodiscard]] uint64_t badChar(Ctx* ctx, typeXid xid, uint64_t byte1, uint64_t byte2) const;
-        [[nodiscard]] uint64_t badChar(Ctx* ctx, typeXid xid, uint64_t byte1, uint64_t byte2, uint64_t byte3) const;
-        [[nodiscard]] uint64_t badChar(Ctx* ctx, typeXid xid, uint64_t byte1, uint64_t byte2, uint64_t byte3, uint64_t byte4) const;
-        [[nodiscard]] uint64_t badChar(Ctx* ctx, typeXid xid, uint64_t byte1, uint64_t byte2, uint64_t byte3, uint64_t byte4, uint64_t byte5) const;
-        [[nodiscard]] uint64_t badChar(Ctx* ctx, typeXid xid, uint64_t byte1, uint64_t byte2, uint64_t byte3, uint64_t byte4, uint64_t byte5,
+        [[nodiscard]] uint64_t badChar(const Ctx* ctx, typeXid xid, uint64_t byte1) const;
+        [[nodiscard]] uint64_t badChar(const Ctx* ctx, typeXid xid, uint64_t byte1, uint64_t byte2) const;
+        [[nodiscard]] uint64_t badChar(const Ctx* ctx, typeXid xid, uint64_t byte1, uint64_t byte2, uint64_t byte3) const;
+        [[nodiscard]] uint64_t badChar(const Ctx* ctx, typeXid xid, uint64_t byte1, uint64_t byte2, uint64_t byte3, uint64_t byte4) const;
+        [[nodiscard]] uint64_t badChar(const Ctx* ctx, typeXid xid, uint64_t byte1, uint64_t byte2, uint64_t byte3, uint64_t byte4, uint64_t byte5) const;
+        [[nodiscard]] uint64_t badChar(const Ctx* ctx, typeXid xid, uint64_t byte1, uint64_t byte2, uint64_t byte3, uint64_t byte4, uint64_t byte5,
                                        uint64_t byte6) const;
 
     public:
@@ -45,7 +46,7 @@ namespace OpenLogReplicator {
         explicit CharacterSet(const char* newName);
         virtual ~CharacterSet();
 
-        virtual typeUnicode decode(Ctx* ctx, typeXid xid, const uint8_t*& str, uint64_t& length) const = 0;
+        virtual typeUnicode decode(const Ctx* ctx, typeXid xid, const uint8_t*& str, uint64_t& length) const = 0;
     };
 }
 

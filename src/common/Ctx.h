@@ -20,6 +20,7 @@ along with OpenLogReplicator; see the file LICENSE;  If not see
 #include <atomic>
 #include <condition_variable>
 #include <fstream>
+#include <memory>
 #include <mutex>
 #include <rapidjson/document.h>
 #include <rapidjson/error/en.h>
@@ -33,87 +34,6 @@ along with OpenLogReplicator; see the file LICENSE;  If not see
 #ifndef CTX_H_
 #define CTX_H_
 
-#define REDO_VERSION_12_1       0x0C100000
-#define REDO_VERSION_12_2       0x0C200000
-#define REDO_VERSION_18_0       0x12000000
-#define REDO_VERSION_19_0       0x13000000
-#define REDO_VERSION_23_0       0x17000000
-#define COLUMN_LIMIT            1000
-#define COLUMN_LIMIT_23_0       4096
-
-
-#define MEMORY_CHUNK_SIZE_MB                    1
-#define MEMORY_CHUNK_SIZE                       (MEMORY_CHUNK_SIZE_MB*1024*1024)
-#define MEMORY_CHUNK_MIN_MB                     16
-
-#define OLR_LOCALES_TIMESTAMP                   0
-#define OLR_LOCALES_MOCK                        1
-
-#define LOG_LEVEL_SILENT                        0
-#define LOG_LEVEL_ERROR                         1
-#define LOG_LEVEL_WARNING                       2
-#define LOG_LEVEL_INFO                          3
-#define LOG_LEVEL_DEBUG                         4
-
-#define TRACE_DML                               0x00000001
-#define TRACE_DUMP                              0x00000002
-#define TRACE_LOB                               0x00000004
-#define TRACE_LWN                               0x00000008
-#define TRACE_THREADS                           0x00000010
-#define TRACE_SQL                               0x00000020
-#define TRACE_FILE                              0x00000040
-#define TRACE_DISK                              0x00000080
-#define TRACE_PERFORMANCE                       0x00000100
-#define TRACE_TRANSACTION                       0x00000200
-#define TRACE_REDO                              0x00000400
-#define TRACE_ARCHIVE_LIST                      0x00000800
-#define TRACE_SCHEMA_LIST                       0x00001000
-#define TRACE_WRITER                            0x00002000
-#define TRACE_CHECKPOINT                        0x00004000
-#define TRACE_SYSTEM                            0x00008000
-#define TRACE_LOB_DATA                          0x00010000
-#define TRACE_SLEEP                             0x00020000
-#define TRACE_CONDITION                         0x00040000
-
-#define REDO_FLAGS_ARCH_ONLY                    0x00000001
-#define REDO_FLAGS_SCHEMALESS                   0x00000002
-#define REDO_FLAGS_ADAPTIVE_SCHEMA              0x00000004
-#define REDO_FLAGS_DIRECT_DISABLE               0x00000008
-#define REDO_FLAGS_IGNORE_DATA_ERRORS           0x00000010
-#define REDO_FLAGS_SHOW_DDL                     0x00000020
-#define REDO_FLAGS_SHOW_HIDDEN_COLUMNS          0x00000040
-#define REDO_FLAGS_SHOW_GUARD_COLUMNS           0x00000080
-#define REDO_FLAGS_SHOW_NESTED_COLUMNS          0x00000100
-#define REDO_FLAGS_SHOW_UNUSED_COLUMNS          0x00000200
-#define REDO_FLAGS_SHOW_INCOMPLETE_TRANSACTIONS 0x00000400
-#define REDO_FLAGS_SHOW_SYSTEM_TRANSACTIONS     0x00000800
-#define REDO_FLAGS_SHOW_CHECKPOINT              0x00001000
-#define REDO_FLAGS_CHECKPOINT_KEEP              0x00002000
-#define REDO_FLAGS_VERIFY_SCHEMA                0x00004000
-#define REDO_FLAGS_RAW_COLUMN_DATA              0x00008000
-#define REDO_FLAGS_EXPERIMENTAL_XMLTYPE         0x00010000
-#define REDO_FLAGS_EXPERIMENTAL_JSON            0x00020000
-#define REDO_FLAGS_EXPERIMENTAL_NOT_NULL_MISSING 0x00040000
-
-#define FLAG(x)                                 ((ctx->flags&(x))!=0)
-
-#define DISABLE_CHECKS_GRANTS                   0x00000001
-#define DISABLE_CHECKS_SUPPLEMENTAL_LOG         0x00000002
-#define DISABLE_CHECKS_BLOCK_SUM                0x00000004
-#define DISABLE_CHECKS(x)                       ((ctx->disableChecks&(x))!=0)
-
-#define MEMORY_MODULE_BUILDER                   0
-#define MEMORY_MODULE_PARSER                    1
-#define MEMORY_MODULE_READER                    2
-#define MEMORY_MODULE_TRANSACTIONS              3
-#define MEMORY_MODULES_NUM                      4
-
-#define UNIX_AD1970_01_01                       62167132800L
-#define UNIX_BC1970_01_01                       (62167132800L-365*24*60*60)
-#define UNIX_BC4712_01_01                       (-210831897600L)
-#define UNIX_AD9999_12_31                       253402300799L
-#define BAD_TIMEZONE                            0x7FFFFFFFFFFFFFFF
-
 #ifndef GLOBALS
 extern uint64_t OLR_LOCALES;
 #endif
@@ -124,6 +44,98 @@ namespace OpenLogReplicator {
     class Thread;
 
     class Ctx final {
+    public:
+        static constexpr uint64_t BAD_TIMEZONE = 0x7FFFFFFFFFFFFFFF;
+        static constexpr size_t MEMORY_ALIGNMENT = 512;
+        static constexpr uint64_t MAX_PATH_LENGTH = 2048;
+
+        static constexpr uint64_t COLUMN_LIMIT = 1000;
+        static constexpr uint64_t COLUMN_LIMIT_23_0 = 4096;
+
+        static constexpr uint64_t DISABLE_CHECKS_GRANTS = 0x00000001;
+        static constexpr uint64_t DISABLE_CHECKS_SUPPLEMENTAL_LOG = 0x00000002;
+        static constexpr uint64_t DISABLE_CHECKS_BLOCK_SUM = 0x00000004;
+        static constexpr uint64_t DISABLE_CHECKS_JSON_TAGS = 0x00000008;
+
+        static constexpr uint64_t JSON_PARAMETER_LENGTH = 256;
+        static constexpr uint64_t JSON_BROKERS_LENGTH = 4096;
+        static constexpr uint64_t JSON_TOPIC_LENGTH = 256;
+
+        static constexpr uint64_t JSON_USERNAME_LENGTH = 128;
+        static constexpr uint64_t JSON_PASSWORD_LENGTH = 128;
+        static constexpr uint64_t JSON_SERVER_LENGTH = 4096;
+        static constexpr uint64_t JSON_KEY_LENGTH = 4096;
+        static constexpr uint64_t JSON_CONDITION_LENGTH = 16384;
+        static constexpr uint64_t JSON_XID_LENGTH = 32;
+
+        static constexpr uint64_t LOG_LEVEL_SILENT = 0;
+        static constexpr uint64_t LOG_LEVEL_ERROR = 1;
+        static constexpr uint64_t LOG_LEVEL_WARNING = 2;
+        static constexpr uint64_t LOG_LEVEL_INFO = 3;
+        static constexpr uint64_t LOG_LEVEL_DEBUG = 4;
+
+        static constexpr uint64_t MEMORY_MODULE_BUILDER = 0;
+        static constexpr uint64_t MEMORY_MODULE_PARSER = 1;
+        static constexpr uint64_t MEMORY_MODULE_READER = 2;
+        static constexpr uint64_t MEMORY_MODULE_TRANSACTIONS = 3;
+        static constexpr uint64_t MEMORY_MODULES_NUM = 4;
+
+        static constexpr uint64_t MEMORY_CHUNK_SIZE_MB = 1;
+        static constexpr uint64_t MEMORY_CHUNK_SIZE = MEMORY_CHUNK_SIZE_MB * 1024 * 1024;
+        static constexpr uint64_t MEMORY_CHUNK_MIN_MB = 16;
+
+        static constexpr uint64_t OLR_LOCALES_TIMESTAMP = 0;
+        static constexpr uint64_t OLR_LOCALES_MOCK = 1;
+
+        static constexpr uint64_t REDO_FLAGS_ARCH_ONLY = 0x00000001;
+        static constexpr uint64_t REDO_FLAGS_SCHEMALESS = 0x00000002;
+        static constexpr uint64_t REDO_FLAGS_ADAPTIVE_SCHEMA = 0x00000004;
+        static constexpr uint64_t REDO_FLAGS_DIRECT_DISABLE = 0x00000008;
+        static constexpr uint64_t REDO_FLAGS_IGNORE_DATA_ERRORS = 0x00000010;
+        static constexpr uint64_t REDO_FLAGS_SHOW_DDL = 0x00000020;
+        static constexpr uint64_t REDO_FLAGS_SHOW_HIDDEN_COLUMNS = 0x00000040;
+        static constexpr uint64_t REDO_FLAGS_SHOW_GUARD_COLUMNS = 0x00000080;
+        static constexpr uint64_t REDO_FLAGS_SHOW_NESTED_COLUMNS = 0x00000100;
+        static constexpr uint64_t REDO_FLAGS_SHOW_UNUSED_COLUMNS = 0x00000200;
+        static constexpr uint64_t REDO_FLAGS_SHOW_INCOMPLETE_TRANSACTIONS = 0x00000400;
+        static constexpr uint64_t REDO_FLAGS_SHOW_SYSTEM_TRANSACTIONS = 0x00000800;
+        static constexpr uint64_t REDO_FLAGS_SHOW_CHECKPOINT = 0x00001000;
+        static constexpr uint64_t REDO_FLAGS_CHECKPOINT_KEEP = 0x00002000;
+        static constexpr uint64_t REDO_FLAGS_VERIFY_SCHEMA = 0x00004000;
+        static constexpr uint64_t REDO_FLAGS_RAW_COLUMN_DATA = 0x00008000;
+        static constexpr uint64_t REDO_FLAGS_EXPERIMENTAL_XMLTYPE = 0x00010000;
+        static constexpr uint64_t REDO_FLAGS_EXPERIMENTAL_JSON = 0x00020000;
+        static constexpr uint64_t REDO_FLAGS_EXPERIMENTAL_NOT_NULL_MISSING = 0x00040000;
+
+        static constexpr uint64_t TRACE_DML = 0x00000001;
+        static constexpr uint64_t TRACE_DUMP = 0x00000002;
+        static constexpr uint64_t TRACE_LOB = 0x00000004;
+        static constexpr uint64_t TRACE_LWN = 0x00000008;
+        static constexpr uint64_t TRACE_THREADS = 0x00000010;
+        static constexpr uint64_t TRACE_SQL = 0x00000020;
+        static constexpr uint64_t TRACE_FILE = 0x00000040;
+        static constexpr uint64_t TRACE_DISK = 0x00000080;
+        static constexpr uint64_t TRACE_PERFORMANCE = 0x00000100;
+        static constexpr uint64_t TRACE_TRANSACTION = 0x00000200;
+        static constexpr uint64_t TRACE_REDO = 0x00000400;
+        static constexpr uint64_t TRACE_ARCHIVE_LIST = 0x00000800;
+        static constexpr uint64_t TRACE_SCHEMA_LIST = 0x00001000;
+        static constexpr uint64_t TRACE_WRITER = 0x00002000;
+        static constexpr uint64_t TRACE_CHECKPOINT = 0x00004000;
+        static constexpr uint64_t TRACE_SYSTEM = 0x00008000;
+        static constexpr uint64_t TRACE_LOB_DATA = 0x00010000;
+        static constexpr uint64_t TRACE_SLEEP = 0x00020000;
+        static constexpr uint64_t TRACE_CONDITION = 0x00040000;
+
+        static constexpr time_t UNIX_AD1970_01_01 = 62167132800L;
+        static constexpr time_t UNIX_BC1970_01_01 = 62167132800L - 365 * 24 * 60 * 60;
+        static constexpr time_t UNIX_BC4712_01_01 = -210831897600L;
+        static constexpr time_t UNIX_AD9999_12_31 = 253402300799L;
+
+        static constexpr typeSeq ZERO_SEQ = 0xFFFFFFFF;
+        static constexpr typeScn ZERO_SCN = 0xFFFFFFFFFFFFFFFF;
+        static constexpr typeBlk ZERO_BLK = 0xFFFFFFFF;
+
     protected:
         bool bigEndian;
         std::atomic<uint64_t> memoryMinMb;
@@ -145,7 +157,7 @@ namespace OpenLogReplicator {
         std::set<Thread*> threads;
         pthread_t mainThread;
 
-        inline int64_t yearToDays(int64_t year, int64_t month) {
+        inline int64_t yearToDays(int64_t year, int64_t month) const {
             int64_t result = year * 365 + year / 4 - year / 100 + year / 400;
             if ((year % 4) == 0 && ((year % 100) != 0 || (year % 400) == 0) && month < 2)
                 --result;
@@ -153,7 +165,7 @@ namespace OpenLogReplicator {
             return result;
         }
 
-        inline int64_t yearToDaysBC(int64_t year, int64_t month) {
+        inline int64_t yearToDaysBC(int64_t year, int64_t month) const {
             int64_t result = (year * 365) + (year / 4) - (year / 100) + (year / 400);
             if ((year % 4) == 0 && ((year % 100) != 0 || (year % 400) == 0) && month >= 2)
                 --result;
@@ -162,6 +174,15 @@ namespace OpenLogReplicator {
         }
 
     public:
+
+        bool flagsSet(uint64_t mask) const {
+            return (flags & mask) != 0;
+        }
+
+        bool disableChecksSet(uint64_t mask) const {
+            return (disableChecks & mask) != 0;
+        }
+
         static const char map64[65];
         static const char map64R[256];
         static const std::string memoryModules[MEMORY_MODULES_NUM];
@@ -176,7 +197,7 @@ namespace OpenLogReplicator {
         std::string versionStr;
         std::atomic<uint64_t> dumpRedoLog;
         std::atomic<uint64_t> dumpRawData;
-        std::ofstream dumpStream;
+        std::unique_ptr<std::ofstream> dumpStream;
         int64_t dbTimezone;
         int64_t hostTimezone;
         int64_t logTimezone;
@@ -536,6 +557,7 @@ namespace OpenLogReplicator {
             }
         }
 
+        static void checkJsonFields(const std::string& fileName, const rapidjson::Value& value, const char* names[]);
         [[nodiscard]] static const rapidjson::Value& getJsonFieldA(const std::string& fileName, const rapidjson::Value& value, const char* field);
         [[nodiscard]] static uint16_t getJsonFieldU16(const std::string& fileName, const rapidjson::Value& value, const char* field);
         [[nodiscard]] static int16_t getJsonFieldI16(const std::string& fileName, const rapidjson::Value& value, const char* field);
@@ -557,16 +579,16 @@ namespace OpenLogReplicator {
         [[nodiscard]] static const char* getJsonFieldS(const std::string& fileName, uint64_t maxLength, const rapidjson::Value& value, const char* field,
                                                        uint64_t num);
 
-        bool parseTimezone(const char* str, int64_t& out);
-        std::string timezoneToString(int64_t tz);
-        time_t valuesToEpoch(int64_t year, int64_t month, int64_t day, int64_t hour, int64_t minute, int64_t second, int64_t tz);
-        uint64_t epochToIso8601(time_t timestamp, char* buffer, bool addT, bool addZ);
+        bool parseTimezone(const char* str, int64_t& out) const;
+        std::string timezoneToString(int64_t tz) const;
+        time_t valuesToEpoch(int64_t year, int64_t month, int64_t day, int64_t hour, int64_t minute, int64_t second, int64_t tz) const;
+        uint64_t epochToIso8601(time_t timestamp, char* buffer, bool addT, bool addZ) const;
 
         void initialize(uint64_t newMemoryMinMb, uint64_t newMemoryMaxMb, uint64_t newReadBufferMax);
         void wakeAllOutOfMemory();
         [[nodiscard]] uint64_t getMaxUsedMemory() const;
         [[nodiscard]] uint64_t getAllocatedMemory() const;
-        [[nodiscard]] uint64_t getFreeMemory();
+        [[nodiscard]] uint64_t getFreeMemory() const;
         [[nodiscard]] uint8_t* getMemoryChunk(uint64_t module, bool reusable);
         void freeMemoryChunk(uint64_t module, uint8_t* chunk, bool reusable);
         void stopHard();
@@ -585,13 +607,13 @@ namespace OpenLogReplicator {
         void allocateBuffer();
         void signalDump();
 
-        void welcome(const std::string& message);
-        void hint(const std::string& message);
-        void error(int code, const std::string& message);
-        void warning(int code, const std::string& message);
-        void info(int code, const std::string& message);
-        void debug(int code, const std::string& message);
-        void logTrace(int mask, const std::string& message);
+        void welcome(const std::string& message) const;
+        void hint(const std::string& message) const;
+        void error(int code, const std::string& message) const;
+        void warning(int code, const std::string& message) const;
+        void info(int code, const std::string& message) const;
+        void debug(int code, const std::string& message) const;
+        void logTrace(int mask, const std::string& message) const;
     };
 }
 

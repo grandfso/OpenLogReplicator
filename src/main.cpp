@@ -94,30 +94,37 @@ namespace OpenLogReplicator {
         int ret = 1;
         struct utsname name;
         if (uname(&name)) exit(-1);
+        std::string buildArch;
+        if (strlen(OpenLogReplicator_CMAKE_BUILD_TIMESTAMP) > 0)
+            buildArch = ", build-arch: " OpenLogReplicator_CPU_ARCH;
 
         mainCtx->welcome("OpenLogReplicator v" + std::to_string(OpenLogReplicator_VERSION_MAJOR) + "." +
                          std::to_string(OpenLogReplicator_VERSION_MINOR) + "." + std::to_string(OpenLogReplicator_VERSION_PATCH) +
                          " (C) 2018-2024 by Adam Leszczynski (aleszczynski@bersler.com), see LICENSE file for licensing information");
-        mainCtx->welcome("arch: " + std::string(name.machine) + ", build-arch: " + OpenLogReplicator_CPU_ARCH + ", system: " + name.sysname +
+        mainCtx->welcome("arch: " + std::string(name.machine) + buildArch + ", system: " + name.sysname +
                          ", release: " + name.release + ", build: " +
                          OpenLogReplicator_CMAKE_BUILD_TYPE + ", compiled: " + OpenLogReplicator_CMAKE_BUILD_TIMESTAMP + ", modules:"
                          HAS_KAFKA HAS_OCI HAS_PROMETHEUS HAS_PROTOBUF HAS_ZEROMQ HAS_STATIC);
 
         const char* fileName = "scripts/OpenLogReplicator.json";
         try {
+            bool forceRoot = false;
             std::regex regexTest(".*");
             std::string regexString("check if matches!");
             bool regexWorks = regex_search(regexString, regexTest);
             if (!regexWorks)
                 throw RuntimeException(10019, "binaries are build with no regex implementation, check if you have gcc version >= 4.9");
 
-            if (getuid() == 0)
-                throw RuntimeException(10020, "program is run as root, you should never do that");
-
             for (int i = 1; i < argc; i++) {
                 if ((strncmp(argv[i], "-v", 2) == 0 || strncmp(argv[i], "--version", 9) == 0)) {
                     // Print banner and exit
                     return 0;
+                }
+
+                if ((strncmp(argv[i], "-r", 2) == 0 || strncmp(argv[i], "--root", 6) == 0)) {
+                    // Allow bad practice to run as root
+                    forceRoot = true;
+                    continue;
                 }
 
                 if (i + 1 < argc && (strncmp(argv[i], "-f", 2) == 0 || strncmp(argv[i], "--file", 6) == 0)) {
@@ -137,6 +144,12 @@ namespace OpenLogReplicator {
 #endif
                     ++i;
                     continue;
+                }
+
+                if (getuid() == 0) {
+                    if (!forceRoot)
+                        throw RuntimeException(10020, "program is run as root, you should never do that");
+                    mainCtx->warning(10020, "program is run as root, you should never do that");
                 }
 
                 throw ConfigurationException(30002, "invalid arguments, run: " + std::string(argv[0]) +
@@ -189,7 +202,7 @@ int main(int argc, char** argv) {
     if (olrLocalesStr != nullptr)
         olrLocales = olrLocalesStr;
     if (olrLocales == "MOCK")
-        OLR_LOCALES = OLR_LOCALES_MOCK;
+        OLR_LOCALES = OpenLogReplicator::Ctx::OLR_LOCALES_MOCK;
 
     int ret = OpenLogReplicator::mainFunction(argc, argv);
 

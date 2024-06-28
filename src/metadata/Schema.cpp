@@ -55,8 +55,8 @@ namespace OpenLogReplicator {
             xdbXNmTmp(nullptr),
             xdbXPtTmp(nullptr),
             xdbXQnTmp(nullptr),
-            scn(ZERO_SCN),
-            refScn(ZERO_SCN),
+            scn(Ctx::ZERO_SCN),
+            refScn(Ctx::ZERO_SCN),
             loaded(false),
             xmlCtxDefault(nullptr),
             columnTmp(nullptr),
@@ -897,7 +897,7 @@ namespace OpenLogReplicator {
 
     void Schema::dictSysCColAdd(const char* rowIdStr, typeCon con, typeCol intCol, typeObj obj, uint64_t spare11, uint64_t spare12) {
         typeRowId rowId(rowIdStr);
-        if (sysCColMapRowId.find(rowId) != sysCColMapRowId.end())
+        if (unlikely(sysCColMapRowId.find(rowId) != sysCColMapRowId.end()))
             throw DataException(50023, "duplicate SYS.CCOL$ value: (rowid: " + rowId.toString() + ")");
 
         sysCColTmp = new SysCCol(rowId, con, intCol, obj, spare11, spare12);
@@ -907,7 +907,7 @@ namespace OpenLogReplicator {
 
     void Schema::dictSysCDefAdd(const char* rowIdStr, typeCon con, typeObj obj, typeType type) {
         typeRowId rowId(rowIdStr);
-        if (sysCDefMapRowId.find(rowId) != sysCDefMapRowId.end())
+        if (unlikely(sysCDefMapRowId.find(rowId) != sysCDefMapRowId.end()))
             throw DataException(50023, "duplicate SYS.CDEF$ value: (rowid: " + rowId.toString() + ")");
 
         sysCDefTmp = new SysCDef(rowId, con, obj, type);
@@ -919,14 +919,14 @@ namespace OpenLogReplicator {
                                uint64_t length, int64_t precision, int64_t scale, uint64_t charsetForm, uint64_t charsetId, int64_t null_,
                                uint64_t property1, uint64_t property2) {
         typeRowId rowId(rowIdStr);
-        if (sysColMapRowId.find(rowId) != sysColMapRowId.end())
+        if (unlikely(sysColMapRowId.find(rowId) != sysColMapRowId.end()))
             throw DataException(50023, "duplicate SYS.COL$ value: (rowid: " + rowId.toString() + ")");
 
-        if (strlen(name) > SYS_COL_NAME_LENGTH)
+        if (unlikely(strlen(name) > SysCol::NAME_LENGTH))
             throw DataException(50025, "value of SYS.COL$ too long for NAME (value: '" + std::string(name) + "', length: " +
                                        std::to_string(strlen(name)) + ")");
 
-        if (segCol > 1000)
+        if (unlikely(segCol > 1000))
             throw DataException(50025, "value of SYS.COL$ too big for SEGCOL# (value: " + std::to_string(segCol) + ")");
 
         sysColTmp = new SysCol(rowId, obj, col, segCol, intCol, name, type, length,
@@ -938,7 +938,7 @@ namespace OpenLogReplicator {
 
     void Schema::dictSysDeferredStgAdd(const char* rowIdStr, typeObj obj, uint64_t flagsStg1, uint64_t flagsStg2) {
         typeRowId rowId(rowIdStr);
-        if (sysDeferredStgMapRowId.find(rowId) != sysDeferredStgMapRowId.end())
+        if (unlikely(sysDeferredStgMapRowId.find(rowId) != sysDeferredStgMapRowId.end()))
             throw DataException(50023, "duplicate SYS.DEFERRED_STG$ value: (rowid: " + rowId.toString() + ")");
 
         sysDeferredStgTmp = new SysDeferredStg(rowId, obj, flagsStg1, flagsStg2);
@@ -948,7 +948,7 @@ namespace OpenLogReplicator {
 
     void Schema::dictSysEColAdd(const char* rowIdStr, typeObj tabObj, typeCol colNum, typeCol guardId) {
         typeRowId rowId(rowIdStr);
-        if (sysEColMapRowId.find(rowId) != sysEColMapRowId.end())
+        if (unlikely(sysEColMapRowId.find(rowId) != sysEColMapRowId.end()))
             throw DataException(50023, "duplicate SYS.ECOL$ value: (rowid: " + rowId.toString() + ")");
 
         sysEColTmp = new SysECol(rowId, tabObj, colNum, guardId);
@@ -958,7 +958,7 @@ namespace OpenLogReplicator {
 
     void Schema::dictSysLobAdd(const char* rowIdStr, typeObj obj, typeCol col, typeCol intCol, typeObj lObj, typeTs ts) {
         typeRowId rowId(rowIdStr);
-        if (sysLobMapRowId.find(rowId) != sysLobMapRowId.end())
+        if (unlikely(sysLobMapRowId.find(rowId) != sysLobMapRowId.end()))
             throw DataException(50023, "duplicate SYS.LOB$ value: (rowid: " + rowId.toString() + ")");
 
         sysLobTmp = new SysLob(rowId, obj, col, intCol, lObj, ts);
@@ -968,7 +968,7 @@ namespace OpenLogReplicator {
 
     void Schema::dictSysLobCompPartAdd(const char* rowIdStr, typeObj partObj, typeObj lObj) {
         typeRowId rowId(rowIdStr);
-        if (sysLobCompPartMapRowId.find(rowId) != sysLobCompPartMapRowId.end())
+        if (unlikely(sysLobCompPartMapRowId.find(rowId) != sysLobCompPartMapRowId.end()))
             throw DataException(50023, "duplicate SYS.LOBCOMPPART$ value: (rowid: " + rowId.toString() + ")");
 
         sysLobCompPartTmp = new SysLobCompPart(rowId, partObj, lObj);
@@ -978,7 +978,7 @@ namespace OpenLogReplicator {
 
     void Schema::dictSysLobFragAdd(const char* rowIdStr, typeObj fragObj, typeObj parentObj, typeTs ts) {
         typeRowId rowId(rowIdStr);
-        if (sysLobFragMapRowId.find(rowId) != sysLobFragMapRowId.end())
+        if (unlikely(sysLobFragMapRowId.find(rowId) != sysLobFragMapRowId.end()))
             throw DataException(50023, "duplicate SYS.LOBFRAG$ value: (rowid: " + rowId.toString() + ")");
 
         sysLobFragTmp = new SysLobFrag(rowId, fragObj, parentObj, ts);
@@ -996,9 +996,9 @@ namespace OpenLogReplicator {
             if (sysObj->single) {
                 if (!single) {
                     sysObj->single = false;
-                    if (ctx->trace & TRACE_SYSTEM)
-                        ctx->logTrace(TRACE_SYSTEM, "disabling single option for object " + std::string(name) + " (owner " +
-                                                    std::to_string(owner) + ")");
+                    if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+                        ctx->logTrace(Ctx::TRACE_SYSTEM, "disabling single option for object " + std::string(name) + " (owner " +
+                                                         std::to_string(owner) + ")");
                 }
 
                 return true;
@@ -1007,7 +1007,7 @@ namespace OpenLogReplicator {
             return false;
         }
 
-        if (strlen(name) > SYS_OBJ_NAME_LENGTH)
+        if (unlikely(strlen(name) > SysObj::NAME_LENGTH))
             throw DataException(50025, "value of SYS.OBJ$ too long for NAME (value: '" + std::string(name) + "', length: " +
                                        std::to_string(strlen(name)) + ")");
         sysObjTmp = new SysObj(rowId, owner, obj, dataObj, type, name, flags1, flags2,
@@ -1021,7 +1021,7 @@ namespace OpenLogReplicator {
     void Schema::dictSysTabAdd(const char* rowIdStr, typeObj obj, typeDataObj dataObj, typeTs ts, typeCol cluCols, uint64_t flags1, uint64_t flags2,
                                uint64_t property1, uint64_t property2) {
         typeRowId rowId(rowIdStr);
-        if (sysTabMapRowId.find(rowId) != sysTabMapRowId.end())
+        if (unlikely(sysTabMapRowId.find(rowId) != sysTabMapRowId.end()))
             throw DataException(50023, "duplicate SYS.TAB$ value: (rowid: " + rowId.toString() + ")");
 
         sysTabTmp = new SysTab(rowId, obj, dataObj, ts, cluCols, flags1, flags2,
@@ -1032,7 +1032,7 @@ namespace OpenLogReplicator {
 
     void Schema::dictSysTabComPartAdd(const char* rowIdStr, typeObj obj, typeDataObj dataObj, typeObj bo) {
         typeRowId rowId(rowIdStr);
-        if (sysTabComPartMapRowId.find(rowId) != sysTabComPartMapRowId.end())
+        if (unlikely(sysTabComPartMapRowId.find(rowId) != sysTabComPartMapRowId.end()))
             throw DataException(50023, "duplicate SYS.TABCOMPART$ value: (rowid: " + rowId.toString() + ")");
 
         sysTabComPartTmp = new SysTabComPart(rowId, obj, dataObj, bo);
@@ -1042,7 +1042,7 @@ namespace OpenLogReplicator {
 
     void Schema::dictSysTabPartAdd(const char* rowIdStr, typeObj obj, typeDataObj dataObj, typeObj bo) {
         typeRowId rowId(rowIdStr);
-        if (sysTabPartMapRowId.find(rowId) != sysTabPartMapRowId.end())
+        if (unlikely(sysTabPartMapRowId.find(rowId) != sysTabPartMapRowId.end()))
             throw DataException(50023, "duplicate SYS.TABPART$ value: (rowid: " + rowId.toString() + ")");
 
         sysTabPartTmp = new SysTabPart(rowId, obj, dataObj, bo);
@@ -1052,7 +1052,7 @@ namespace OpenLogReplicator {
 
     void Schema::dictSysTabSubPartAdd(const char* rowIdStr, typeObj obj, typeDataObj dataObj, typeObj pObj) {
         typeRowId rowId(rowIdStr);
-        if (sysTabSubPartMapRowId.find(rowId) != sysTabSubPartMapRowId.end())
+        if (unlikely(sysTabSubPartMapRowId.find(rowId) != sysTabSubPartMapRowId.end()))
             throw DataException(50023, "duplicate SYS.TABSUBPART$ value: (rowid: " + rowId.toString() + ")");
 
         sysTabSubPartTmp = new SysTabSubPart(rowId, obj, dataObj, pObj);
@@ -1062,7 +1062,7 @@ namespace OpenLogReplicator {
 
     void Schema::dictSysTsAdd(const char* rowIdStr, typeTs ts, const char* name, uint32_t blockSize) {
         typeRowId rowId(rowIdStr);
-        if (sysTsMapRowId.find(rowId) != sysTsMapRowId.end())
+        if (unlikely(sysTsMapRowId.find(rowId) != sysTsMapRowId.end()))
             throw DataException(50023, "duplicate SYS.TS$ value: (rowid: " + rowId.toString() + ")");
 
         sysTsTmp = new SysTs(rowId, ts, name, blockSize);
@@ -1079,9 +1079,9 @@ namespace OpenLogReplicator {
             if (sysUser->single) {
                 if (!single) {
                     sysUser->single = false;
-                    if (ctx->trace & TRACE_SYSTEM)
-                        ctx->logTrace(TRACE_SYSTEM, "disabling single option for user " + std::string(name) + " (" +
-                                                    std::to_string(user) + ")");
+                    if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+                        ctx->logTrace(Ctx::TRACE_SYSTEM, "disabling single option for user " + std::string(name) + " (" +
+                                                         std::to_string(user) + ")");
                 }
 
                 return true;
@@ -1090,7 +1090,7 @@ namespace OpenLogReplicator {
             return false;
         }
 
-        if (strlen(name) > SYS_USER_NAME_LENGTH)
+        if (unlikely(strlen(name) > SysUser::NAME_LENGTH))
             throw DataException(50025, "value of SYS.USER$ too long for NAME (value: '" + std::string(name) + "', length: " +
                                        std::to_string(strlen(name)) + ")");
         sysUserTmp = new SysUser(rowId, user, name, spare11, spare12, single);
@@ -1102,7 +1102,7 @@ namespace OpenLogReplicator {
 
     void Schema::dictXdbTtSetAdd(const char* rowIdStr, const char* guid, const char* tokSuf, uint64_t flags, typeObj obj) {
         typeRowId rowId(rowIdStr);
-        if (xdbTtSetMapRowId.find(rowId) != xdbTtSetMapRowId.end())
+        if (unlikely(xdbTtSetMapRowId.find(rowId) != xdbTtSetMapRowId.end()))
             throw DataException(50023, "duplicate SYS.TS$ value: (rowid: " + rowId.toString() + ")");
 
         xdbTtSetTmp = new XdbTtSet(rowId, guid, tokSuf, flags, obj);
@@ -1112,7 +1112,7 @@ namespace OpenLogReplicator {
 
     void Schema::dictXdbXNmAdd(XmlCtx* xmlCtx, const char* rowIdStr, const char* nmSpcUri, const char* id) {
         typeRowId rowId(rowIdStr);
-        if (xmlCtx->xdbXNmMapRowId.find(rowId) != xmlCtx->xdbXNmMapRowId.end())
+        if (unlikely(xmlCtx->xdbXNmMapRowId.find(rowId) != xmlCtx->xdbXNmMapRowId.end()))
             throw DataException(50023, "duplicate XDB.X$NM" + xmlCtx->tokSuf + " value: (rowid: " + rowId.toString() + ")");
 
         xdbXNmTmp = new XdbXNm(rowId, nmSpcUri, id);
@@ -1122,7 +1122,7 @@ namespace OpenLogReplicator {
 
     void Schema::dictXdbXPtAdd(XmlCtx* xmlCtx, const char* rowIdStr, const char* path, const char* id) {
         typeRowId rowId(rowIdStr);
-        if (xmlCtx->xdbXPtMapRowId.find(rowId) != xmlCtx->xdbXPtMapRowId.end())
+        if (unlikely(xmlCtx->xdbXPtMapRowId.find(rowId) != xmlCtx->xdbXPtMapRowId.end()))
             throw DataException(50023, "duplicate XDB.X$PT" + xmlCtx->tokSuf + " value: (rowid: " + rowId.toString() + ")");
 
         xdbXPtTmp = new XdbXPt(rowId, path, id);
@@ -1132,7 +1132,7 @@ namespace OpenLogReplicator {
 
     void Schema::dictXdbXQnAdd(XmlCtx* xmlCtx, const char* rowIdStr, const char* nmSpcId, const char* localName, const char* flags, const char* id) {
         typeRowId rowId(rowIdStr);
-        if (xmlCtx->xdbXQnMapRowId.find(rowId) != xmlCtx->xdbXQnMapRowId.end())
+        if (unlikely(xmlCtx->xdbXQnMapRowId.find(rowId) != xmlCtx->xdbXQnMapRowId.end()))
             throw DataException(50023, "duplicate XDB.X$QN" + xmlCtx->tokSuf + " value: (rowid: " + rowId.toString() + ")");
 
         xdbXQnTmp = new XdbXQn(rowId, nmSpcId, localName, flags, id);
@@ -1141,16 +1141,16 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictSysCColAdd(SysCCol* sysCCol) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "insert SYS.CCOL$ (ROWID: " + sysCCol->rowId.toString() +
-                                        ", CON#: " + std::to_string(sysCCol->con) +
-                                        ", INTCOL#: " + std::to_string(sysCCol->intCol) +
-                                        ", OBJ#: " + std::to_string(sysCCol->obj) +
-                                        ", SPARE1: " + sysCCol->spare1.toString() + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "insert SYS.CCOL$ (ROWID: " + sysCCol->rowId.toString() +
+                                             ", CON#: " + std::to_string(sysCCol->con) +
+                                             ", INTCOL#: " + std::to_string(sysCCol->intCol) +
+                                             ", OBJ#: " + std::to_string(sysCCol->obj) +
+                                             ", SPARE1: " + sysCCol->spare1.toString() + ")");
 
         SysCColKey sysCColKey(sysCCol->obj, sysCCol->intCol, sysCCol->con);
         auto sysCColMapKeyIt = sysCColMapKey.find(sysCColKey);
-        if (sysCColMapKeyIt != sysCColMapKey.end())
+        if (unlikely(sysCColMapKeyIt != sysCColMapKey.end()))
             throw DataException(50024, "duplicate SYS.CCOL$ value for unique (OBJ#: " + std::to_string(sysCCol->obj) + ", INTCOL#: " +
                                        std::to_string(sysCCol->intCol) + ", CON#: " + std::to_string(sysCCol->con) + ")");
 
@@ -1162,20 +1162,20 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictSysCDefAdd(SysCDef* sysCDef) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "insert SYS.CDEF$ (ROWID: " + sysCDef->rowId.toString() +
-                                        ", CON#: " + std::to_string(sysCDef->con) +
-                                        ", OBJ#: " + std::to_string(sysCDef->obj) +
-                                        ", TYPE: " + std::to_string(sysCDef->type) + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "insert SYS.CDEF$ (ROWID: " + sysCDef->rowId.toString() +
+                                             ", CON#: " + std::to_string(sysCDef->con) +
+                                             ", OBJ#: " + std::to_string(sysCDef->obj) +
+                                             ", TYPE: " + std::to_string(sysCDef->type) + ")");
 
         SysCDefKey sysCDefKey(sysCDef->obj, sysCDef->con);
         auto sysCDefMapKeyIt = sysCDefMapKey.find(sysCDefKey);
-        if (sysCDefMapKeyIt != sysCDefMapKey.end())
+        if (unlikely(sysCDefMapKeyIt != sysCDefMapKey.end()))
             throw DataException(50024, "duplicate SYS.CDEF$ value for unique (OBJ#: " + std::to_string(sysCDef->obj) + ", CON#: " +
                                        std::to_string(sysCDef->con) + ")");
 
         auto sysCDefMapConIt = sysCDefMapCon.find(sysCDef->con);
-        if (sysCDefMapConIt != sysCDefMapCon.end())
+        if (unlikely(sysCDefMapConIt != sysCDefMapCon.end()))
             throw DataException(50024, "duplicate SYS.CDEF$ value for unique (CON#: " + std::to_string(sysCDef->con) + ")");
 
         sysCDefMapRowId.insert_or_assign(sysCDef->rowId, sysCDef);
@@ -1187,25 +1187,25 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictSysColAdd(SysCol* sysCol) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "insert SYS.COL$ (ROWID: " + sysCol->rowId.toString() +
-                                        ", OBJ#: " + std::to_string(sysCol->obj) +
-                                        ", COL#: " + std::to_string(sysCol->col) +
-                                        ", SEGCOL#: " + std::to_string(sysCol->segCol) +
-                                        ", INTCOL#: " + std::to_string(sysCol->intCol) +
-                                        ", NAME: '" + sysCol->name +
-                                        "', TYPE#: " + std::to_string(sysCol->type) +
-                                        ", LENGTH: " + std::to_string(sysCol->length) +
-                                        ", PRECISION#: " + std::to_string(sysCol->precision) +
-                                        ", SCALE: " + std::to_string(sysCol->scale) +
-                                        ", CHARSETFORM: " + std::to_string(sysCol->charsetForm) +
-                                        ", CHARSETID: " + std::to_string(sysCol->charsetId) +
-                                        ", NULL$: " + std::to_string(sysCol->null_) +
-                                        ", PROPERTY: " + sysCol->property.toString() + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "insert SYS.COL$ (ROWID: " + sysCol->rowId.toString() +
+                                             ", OBJ#: " + std::to_string(sysCol->obj) +
+                                             ", COL#: " + std::to_string(sysCol->col) +
+                                             ", SEGCOL#: " + std::to_string(sysCol->segCol) +
+                                             ", INTCOL#: " + std::to_string(sysCol->intCol) +
+                                             ", NAME: '" + sysCol->name +
+                                             "', TYPE#: " + std::to_string(sysCol->type) +
+                                             ", SIZE: " + std::to_string(sysCol->length) +
+                                             ", PRECISION#: " + std::to_string(sysCol->precision) +
+                                             ", SCALE: " + std::to_string(sysCol->scale) +
+                                             ", CHARSETFORM: " + std::to_string(sysCol->charsetForm) +
+                                             ", CHARSETID: " + std::to_string(sysCol->charsetId) +
+                                             ", NULL$: " + std::to_string(sysCol->null_) +
+                                             ", PROPERTY: " + sysCol->property.toString() + ")");
 
         SysColSeg sysColSeg(sysCol->obj, sysCol->segCol, sysCol->rowId);
         auto sysColMapSegIt = sysColMapSeg.find(sysColSeg);
-        if (sysColMapSegIt != sysColMapSeg.end())
+        if (unlikely(sysColMapSegIt != sysColMapSeg.end()))
             throw DataException(50024, "duplicate SYS.COL$ value for unique (OBJ#: " + std::to_string(sysCol->obj) + ", SEGCOL#: " +
                                        std::to_string(sysCol->segCol) + ", ROWID: " + sysCol->rowId.toString() + ")");
 
@@ -1217,13 +1217,13 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictSysDeferredStgAdd(SysDeferredStg* sysDeferredStg) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "insert SYS.DEFERRED_STG$ (ROWID: " + sysDeferredStg->rowId.toString() +
-                                        ", OBJ#: " + std::to_string(sysDeferredStg->obj) +
-                                        ", FLAGS_STG: " + sysDeferredStg->flagsStg.toString() + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "insert SYS.DEFERRED_STG$ (ROWID: " + sysDeferredStg->rowId.toString() +
+                                             ", OBJ#: " + std::to_string(sysDeferredStg->obj) +
+                                             ", FLAGS_STG: " + sysDeferredStg->flagsStg.toString() + ")");
 
         auto sysDeferredStgMapObjIt = sysDeferredStgMapObj.find(sysDeferredStg->obj);
-        if (sysDeferredStgMapObjIt != sysDeferredStgMapObj.end())
+        if (unlikely(sysDeferredStgMapObjIt != sysDeferredStgMapObj.end()))
             throw DataException(50024, "duplicate SYS.DEFERRED_STG$ value for unique (OBJ#: " + std::to_string(sysDeferredStg->obj) +
                                        ")");
 
@@ -1235,15 +1235,15 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictSysEColAdd(SysECol* sysECol) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "insert SYS.ECOL$ (ROWID: " + sysECol->rowId.toString() +
-                                        ", TABOBJ#: " + std::to_string(sysECol->tabObj) +
-                                        ", COLNUM: " + std::to_string(sysECol->colNum) +
-                                        ", GUARD_ID: " + std::to_string(sysECol->guardId) + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "insert SYS.ECOL$ (ROWID: " + sysECol->rowId.toString() +
+                                             ", TABOBJ#: " + std::to_string(sysECol->tabObj) +
+                                             ", COLNUM: " + std::to_string(sysECol->colNum) +
+                                             ", GUARD_ID: " + std::to_string(sysECol->guardId) + ")");
 
         SysEColKey sysEColKey(sysECol->tabObj, sysECol->colNum);
         auto sysEColMapKeyIt = sysEColMapKey.find(sysEColKey);
-        if (sysEColMapKeyIt != sysEColMapKey.end())
+        if (unlikely(sysEColMapKeyIt != sysEColMapKey.end()))
             throw DataException(50024, "duplicate SYS.ECOL$ value for unique (TABOBJ#: " + std::to_string(sysECol->tabObj) + ", COLNUM: " +
                                        std::to_string(sysECol->colNum) + ")");
 
@@ -1255,22 +1255,22 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictSysLobAdd(SysLob* sysLob) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "insert SYS.LOB$ (ROWID: " + sysLob->rowId.toString() +
-                                        ", OBJ#: " + std::to_string(sysLob->obj) +
-                                        ", COL#: " + std::to_string(sysLob->col) +
-                                        ", INTCOL#: " + std::to_string(sysLob->intCol) +
-                                        ", LOBJ#: " + std::to_string(sysLob->lObj) +
-                                        ", TS#: " + std::to_string(sysLob->ts) + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "insert SYS.LOB$ (ROWID: " + sysLob->rowId.toString() +
+                                             ", OBJ#: " + std::to_string(sysLob->obj) +
+                                             ", COL#: " + std::to_string(sysLob->col) +
+                                             ", INTCOL#: " + std::to_string(sysLob->intCol) +
+                                             ", LOBJ#: " + std::to_string(sysLob->lObj) +
+                                             ", TS#: " + std::to_string(sysLob->ts) + ")");
 
         SysLobKey sysLobKey(sysLob->obj, sysLob->intCol);
         auto sysLobMapKeyIt = sysLobMapKey.find(sysLobKey);
-        if (sysLobMapKeyIt != sysLobMapKey.end())
+        if (unlikely(sysLobMapKeyIt != sysLobMapKey.end()))
             throw DataException(50024, "duplicate SYS.LOB$ value for unique (OBJ#: " + std::to_string(sysLob->obj) + ", INTCOL#: " +
                                        std::to_string(sysLob->intCol) + ")");
 
         auto sysLobMapLObjIt = sysLobMapLObj.find(sysLob->lObj);
-        if (sysLobMapLObjIt != sysLobMapLObj.end())
+        if (unlikely(sysLobMapLObjIt != sysLobMapLObj.end()))
             throw DataException(50024, "duplicate SYS.LOB$ value for unique (LOBJ#: " + std::to_string(sysLob->lObj) + ")");
 
         sysLobMapRowId.insert_or_assign(sysLob->rowId, sysLob);
@@ -1282,19 +1282,19 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictSysLobCompPartAdd(SysLobCompPart* sysLobCompPart) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "insert SYS.LOBCOMPPART$ (ROWID: " + sysLobCompPart->rowId.toString() +
-                                        ", PARTOBJ#: " + std::to_string(sysLobCompPart->partObj) +
-                                        ", LOBJ#: " + std::to_string(sysLobCompPart->lObj) + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "insert SYS.LOBCOMPPART$ (ROWID: " + sysLobCompPart->rowId.toString() +
+                                             ", PARTOBJ#: " + std::to_string(sysLobCompPart->partObj) +
+                                             ", LOBJ#: " + std::to_string(sysLobCompPart->lObj) + ")");
 
         SysLobCompPartKey sysLobCompPartKey(sysLobCompPart->lObj, sysLobCompPart->partObj);
         auto sysLobCompPartMapKeyIt = sysLobCompPartMapKey.find(sysLobCompPartKey);
-        if (sysLobCompPartMapKeyIt != sysLobCompPartMapKey.end())
+        if (unlikely(sysLobCompPartMapKeyIt != sysLobCompPartMapKey.end()))
             throw DataException(50024, "duplicate SYS.LOBCOMPPART$ value for unique (LOBJ#: " + std::to_string(sysLobCompPart->lObj) +
                                        ", PARTOBJ#: " + std::to_string(sysLobCompPart->partObj) + ")");
 
         auto sysLobCompPartMapPartObjIt = sysLobCompPartMapPartObj.find(sysLobCompPart->partObj);
-        if (sysLobCompPartMapPartObjIt != sysLobCompPartMapPartObj.end())
+        if (unlikely(sysLobCompPartMapPartObjIt != sysLobCompPartMapPartObj.end()))
             throw DataException(50024, "duplicate SYS.LOBCOMPPART$ value for unique (PARTOBJ#: " +
                                        std::to_string(sysLobCompPart->partObj) + ")");
 
@@ -1309,15 +1309,15 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictSysLobFragAdd(SysLobFrag* sysLobFrag) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "insert SYS.LOBFRAG$ (ROWID: " + sysLobFrag->rowId.toString() +
-                                        ", FRAGOBJ#: " + std::to_string(sysLobFrag->fragObj) +
-                                        ", PARENTOBJ#: " + std::to_string(sysLobFrag->parentObj) +
-                                        ", TS#: " + std::to_string(sysLobFrag->ts) + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "insert SYS.LOBFRAG$ (ROWID: " + sysLobFrag->rowId.toString() +
+                                             ", FRAGOBJ#: " + std::to_string(sysLobFrag->fragObj) +
+                                             ", PARENTOBJ#: " + std::to_string(sysLobFrag->parentObj) +
+                                             ", TS#: " + std::to_string(sysLobFrag->ts) + ")");
 
         SysLobFragKey sysLobFragKey(sysLobFrag->parentObj, sysLobFrag->fragObj);
         auto sysLobFragMapKeyIt = sysLobFragMapKey.find(sysLobFragKey);
-        if (sysLobFragMapKeyIt != sysLobFragMapKey.end())
+        if (unlikely(sysLobFragMapKeyIt != sysLobFragMapKey.end()))
             throw DataException(50024, "duplicate SYS.LOBFRAG$ value for unique (PARENTOBJ#: " + std::to_string(sysLobFrag->parentObj) +
                                        ", PARTOBJ#: " + std::to_string(sysLobFrag->parentObj) + ")");
 
@@ -1337,23 +1337,23 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictSysObjAdd(SysObj* sysObj) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "insert SYS.OBJ$ (ROWID: " + sysObj->rowId.toString() +
-                                        ", OWNER#: " + std::to_string(sysObj->owner) +
-                                        ", OBJ#: " + std::to_string(sysObj->obj) +
-                                        ", DATAOBJ#: " + std::to_string(sysObj->dataObj) +
-                                        ", TYPE#: " + std::to_string(sysObj->type) +
-                                        ", NAME: '" + sysObj->name +
-                                        "', FLAGS: " + sysObj->flags.toString() + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "insert SYS.OBJ$ (ROWID: " + sysObj->rowId.toString() +
+                                             ", OWNER#: " + std::to_string(sysObj->owner) +
+                                             ", OBJ#: " + std::to_string(sysObj->obj) +
+                                             ", DATAOBJ#: " + std::to_string(sysObj->dataObj) +
+                                             ", TYPE#: " + std::to_string(sysObj->type) +
+                                             ", NAME: '" + sysObj->name +
+                                             "', FLAGS: " + sysObj->flags.toString() + ")");
 
         SysObjNameKey sysObjNameKey(sysObj->owner, sysObj->name.c_str(), sysObj->obj, sysObj->dataObj);
         auto sysObjMapNameIt = sysObjMapName.find(sysObjNameKey);
-        if (sysObjMapNameIt != sysObjMapName.end())
+        if (unlikely(sysObjMapNameIt != sysObjMapName.end()))
             throw DataException(50024, "duplicate SYS.OBJ$ value for unique (OWNER#: " + std::to_string(sysObj->owner) + ", NAME: '" +
                                        sysObj->name + "', OBJ#: " + std::to_string(sysObj->obj) + ", DATAOBJ#: " + std::to_string(sysObj->dataObj) + ")");
 
         auto sysObjMapObjIt = sysObjMapObj.find(sysObj->obj);
-        if (sysObjMapObjIt != sysObjMapObj.end())
+        if (unlikely(sysObjMapObjIt != sysObjMapObj.end()))
             throw DataException(50024, "duplicate SYS.OBJ$ value for unique (OBJ#: " + std::to_string(sysObj->obj) + ")");
 
         sysObjMapRowId.insert_or_assign(sysObj->rowId, sysObj);
@@ -1365,16 +1365,16 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictSysTabAdd(SysTab* sysTab) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "insert SYS.TAB$ (ROWID: " + sysTab->rowId.toString() +
-                                        ", OBJ#: " + std::to_string(sysTab->obj) +
-                                        ", DATAOBJ#: " + std::to_string(sysTab->dataObj) +
-                                        ", CLUCOLS: " + std::to_string(sysTab->cluCols) +
-                                        ", FLAGS: " + sysTab->flags.toString() +
-                                        ", PROPERTY: " + sysTab->property.toString() + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "insert SYS.TAB$ (ROWID: " + sysTab->rowId.toString() +
+                                             ", OBJ#: " + std::to_string(sysTab->obj) +
+                                             ", DATAOBJ#: " + std::to_string(sysTab->dataObj) +
+                                             ", CLUCOLS: " + std::to_string(sysTab->cluCols) +
+                                             ", FLAGS: " + sysTab->flags.toString() +
+                                             ", PROPERTY: " + sysTab->property.toString() + ")");
 
         auto sysTabMapObjIt = sysTabMapObj.find(sysTab->obj);
-        if (sysTabMapObjIt != sysTabMapObj.end())
+        if (unlikely(sysTabMapObjIt != sysTabMapObj.end()))
             throw DataException(50024, "duplicate SYS.TAB$ value for unique (OBJ#: " + std::to_string(sysTab->obj) + ")");
 
         sysTabMapRowId.insert_or_assign(sysTab->rowId, sysTab);
@@ -1385,20 +1385,20 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictSysTabComPartAdd(SysTabComPart* sysTabComPart) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "insert SYS.TABCOMPART$ (ROWID: " + sysTabComPart->rowId.toString() +
-                                        ", OBJ#: " + std::to_string(sysTabComPart->obj) +
-                                        ", DATAOBJ#: " + std::to_string(sysTabComPart->dataObj) +
-                                        ", BO#: " + std::to_string(sysTabComPart->bo) + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "insert SYS.TABCOMPART$ (ROWID: " + sysTabComPart->rowId.toString() +
+                                             ", OBJ#: " + std::to_string(sysTabComPart->obj) +
+                                             ", DATAOBJ#: " + std::to_string(sysTabComPart->dataObj) +
+                                             ", BO#: " + std::to_string(sysTabComPart->bo) + ")");
 
         SysTabComPartKey sysTabComPartKey(sysTabComPart->bo, sysTabComPart->obj);
         auto sysTabComPartMapKeyIt = sysTabComPartMapKey.find(sysTabComPartKey);
-        if (sysTabComPartMapKeyIt != sysTabComPartMapKey.end())
+        if (unlikely(sysTabComPartMapKeyIt != sysTabComPartMapKey.end()))
             throw DataException(50024, "duplicate SYS.TABCOMPART$ value for unique (BO#: " + std::to_string(sysTabComPart->bo) +
                                        ", OBJ#: " + std::to_string(sysTabComPart->obj) + ")");
 
         auto sysTabComPartMapObjIt = sysTabComPartMapObj.find(sysTabComPart->obj);
-        if (sysTabComPartMapObjIt != sysTabComPartMapObj.end())
+        if (unlikely(sysTabComPartMapObjIt != sysTabComPartMapObj.end()))
             throw DataException(50024, "duplicate SYS.TABCOMPART$ value for unique (OBJ#: " + std::to_string(sysTabComPart->obj) + ")");
 
         sysTabComPartMapRowId.insert_or_assign(sysTabComPart->rowId, sysTabComPart);
@@ -1410,15 +1410,15 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictSysTabPartAdd(SysTabPart* sysTabPart) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "insert SYS.TABPART$ (ROWID: " + sysTabPart->rowId.toString() +
-                                        ", OBJ#: " + std::to_string(sysTabPart->obj) +
-                                        ", DATAOBJ#: " + std::to_string(sysTabPart->dataObj) +
-                                        ", BO#: " + std::to_string(sysTabPart->bo) + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "insert SYS.TABPART$ (ROWID: " + sysTabPart->rowId.toString() +
+                                             ", OBJ#: " + std::to_string(sysTabPart->obj) +
+                                             ", DATAOBJ#: " + std::to_string(sysTabPart->dataObj) +
+                                             ", BO#: " + std::to_string(sysTabPart->bo) + ")");
 
         SysTabPartKey sysTabPartKey(sysTabPart->bo, sysTabPart->obj);
         auto sysTabPartMapKeyIt = sysTabPartMapKey.find(sysTabPartKey);
-        if (sysTabPartMapKeyIt != sysTabPartMapKey.end())
+        if (unlikely(sysTabPartMapKeyIt != sysTabPartMapKey.end()))
             throw DataException(50024, "duplicate SYS.TABPART$ value for unique (BO#: " + std::to_string(sysTabPart->bo) + ", OBJ#: " +
                                        std::to_string(sysTabPart->obj) + ")");
 
@@ -1430,15 +1430,15 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictSysTabSubPartAdd(SysTabSubPart* sysTabSubPart) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "insert SYS.TABSUBPART$ (ROWID: " + sysTabSubPart->rowId.toString() +
-                                        ", OBJ#: " + std::to_string(sysTabSubPart->obj) +
-                                        ", DATAOBJ#: " + std::to_string(sysTabSubPart->dataObj) +
-                                        ", POBJ#: " + std::to_string(sysTabSubPart->pObj) + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "insert SYS.TABSUBPART$ (ROWID: " + sysTabSubPart->rowId.toString() +
+                                             ", OBJ#: " + std::to_string(sysTabSubPart->obj) +
+                                             ", DATAOBJ#: " + std::to_string(sysTabSubPart->dataObj) +
+                                             ", POBJ#: " + std::to_string(sysTabSubPart->pObj) + ")");
 
         SysTabSubPartKey sysTabSubPartKey(sysTabSubPart->pObj, sysTabSubPart->obj);
         auto sysTabSubPartMapKeyIt = sysTabSubPartMapKey.find(sysTabSubPartKey);
-        if (sysTabSubPartMapKeyIt != sysTabSubPartMapKey.end())
+        if (unlikely(sysTabSubPartMapKeyIt != sysTabSubPartMapKey.end()))
             throw DataException(50024, "duplicate SYS.TABSUBPART$ value for unique (POBJ#: " + std::to_string(sysTabSubPart->pObj) +
                                        ", OBJ#: " + std::to_string(sysTabSubPart->obj) + ")");
 
@@ -1452,14 +1452,14 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictSysTsAdd(SysTs* sysTs) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "insert SYS.TS$ (ROWID: " + sysTs->rowId.toString() +
-                                        ", TS#: " + std::to_string(sysTs->ts) +
-                                        ", NAME: '" + sysTs->name +
-                                        "', BLOCKSIZE: " + std::to_string(sysTs->blockSize) + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "insert SYS.TS$ (ROWID: " + sysTs->rowId.toString() +
+                                             ", TS#: " + std::to_string(sysTs->ts) +
+                                             ", NAME: '" + sysTs->name +
+                                              "', BLOCKSIZE: " + std::to_string(sysTs->blockSize) + ")");
 
         auto sysTsMapTsIt = sysTsMapTs.find(sysTs->ts);
-        if (sysTsMapTsIt != sysTsMapTs.end())
+        if (unlikely(sysTsMapTsIt != sysTsMapTs.end()))
             throw DataException(50024, "duplicate SYS.TS$ value for unique (TS#: " + std::to_string(sysTs->ts) + ")");
 
         sysTsMapRowId.insert_or_assign(sysTs->rowId, sysTs);
@@ -1468,14 +1468,14 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictSysUserAdd(SysUser* sysUser) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "insert SYS.USER$ (ROWID: " + sysUser->rowId.toString() +
-                                        ", USER#: " + std::to_string(sysUser->user) +
-                                        ", NAME: '" + sysUser->name +
-                                        "', SPARE1: " + sysUser->spare1.toString() + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "insert SYS.USER$ (ROWID: " + sysUser->rowId.toString() +
+                                             ", USER#: " + std::to_string(sysUser->user) +
+                                             ", NAME: '" + sysUser->name +
+                                             "', SPARE1: " + sysUser->spare1.toString() + ")");
 
         auto sysUserMapUserIt = sysUserMapUser.find(sysUser->user);
-        if (sysUserMapUserIt != sysUserMapUser.end())
+        if (unlikely(sysUserMapUserIt != sysUserMapUser.end()))
             throw DataException(50024, "duplicate SYS.USER$ value for unique (USER#: " + std::to_string(sysUser->user) + ")");
 
         sysUserMapRowId.insert_or_assign(sysUser->rowId, sysUser);
@@ -1485,15 +1485,15 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictXdbTtSetAdd(XdbTtSet* xdbTtSet) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "insert XDB.XDB$TTSET (ROWID: " + xdbTtSet->rowId.toString() +
-                                        ", GUID: '" + xdbTtSet->guid +
-                                        "', TOKSUF: '" + xdbTtSet->tokSuf +
-                                        "', FLAGS: '" + std::to_string(xdbTtSet->flags) +
-                                        "', OBJ#: " + std::to_string(xdbTtSet->obj) + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "insert XDB.XDB$TTSET (ROWID: " + xdbTtSet->rowId.toString() +
+                                             ", GUID: '" + xdbTtSet->guid +
+                                             "', TOKSUF: '" + xdbTtSet->tokSuf +
+                                             "', FLAGS: '" + std::to_string(xdbTtSet->flags) +
+                                             "', OBJ#: " + std::to_string(xdbTtSet->obj) + ")");
 
         auto xdbTtSetMapTsIt = xdbTtSetMapTs.find(xdbTtSet->tokSuf);
-        if (xdbTtSetMapTsIt != xdbTtSetMapTs.end())
+        if (unlikely(xdbTtSetMapTsIt != xdbTtSetMapTs.end()))
             throw DataException(50024, "duplicate XDB.XDB$TTSET value for unique (TOKSUF: '" + xdbTtSet->tokSuf + "')");
 
         xdbTtSetMapRowId.insert_or_assign(xdbTtSet->rowId, xdbTtSet);
@@ -1502,53 +1502,53 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictXdbXNmAdd(const std::string& tokSuf, XdbXNm* xdbXNm) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "insert XDB.X$NM" + tokSuf + " (ROWID: " + xdbXNm->rowId.toString() +
-                                        ", NMSPCURI: '" + xdbXNm->nmSpcUri +
-                                        "', ID: '" + xdbXNm->id + "')");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "insert XDB.X$NM" + tokSuf + " (ROWID: " + xdbXNm->rowId.toString() +
+                                             ", NMSPCURI: '" + xdbXNm->nmSpcUri +
+                                             "', ID: '" + xdbXNm->id + "')");
 
         auto schemaXmlMapIt = schemaXmlMap.find(tokSuf);
-        if (schemaXmlMapIt == schemaXmlMap.end())
+        if (unlikely(schemaXmlMapIt == schemaXmlMap.end()))
             throw DataException(50068, "missing XDB.X$NM" + tokSuf + " table, insert failed");
         schemaXmlMapIt->second->dictXdbXNmAdd(xdbXNm);
         touched = true;
     }
 
     void Schema::dictXdbXPtAdd(const std::string& tokSuf, XdbXPt* xdbXPt) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "insert XDB.X$PT" + tokSuf + " (ROWID: " + xdbXPt->rowId.toString() +
-                                        ", PATH: '" + xdbXPt->path +
-                                        "', ID: '" + xdbXPt->id + "')");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "insert XDB.X$PT" + tokSuf + " (ROWID: " + xdbXPt->rowId.toString() +
+                                             ", PATH: '" + xdbXPt->path +
+                                             "', ID: '" + xdbXPt->id + "')");
 
         auto schemaXmlMapIt = schemaXmlMap.find(tokSuf);
-        if (schemaXmlMapIt == schemaXmlMap.end())
+        if (unlikely(schemaXmlMapIt == schemaXmlMap.end()))
             throw DataException(50068, "missing XDB.X$PT" + tokSuf + " table, insert failed");
         schemaXmlMapIt->second->dictXdbXPtAdd(xdbXPt);
         touched = true;
     }
 
     void Schema::dictXdbXQnAdd(const std::string& tokSuf, XdbXQn* xdbXQn) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "insert XDB.X$QN" + tokSuf + " (ROWID: " + xdbXQn->rowId.toString() +
-                                        ", NMSPCID: '" + xdbXQn->nmSpcId +
-                                        "', LOCALNAME: '" + xdbXQn->localName +
-                                        "', FLAGS: '" + xdbXQn->flags +
-                                        "', ID: '" + xdbXQn->id + "')");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "insert XDB.X$QN" + tokSuf + " (ROWID: " + xdbXQn->rowId.toString() +
+                                             ", NMSPCID: '" + xdbXQn->nmSpcId +
+                                             "', LOCALNAME: '" + xdbXQn->localName +
+                                             "', FLAGS: '" + xdbXQn->flags +
+                                             "', ID: '" + xdbXQn->id + "')");
 
         auto schemaXmlMapIt = schemaXmlMap.find(tokSuf);
-        if (schemaXmlMapIt == schemaXmlMap.end())
+        if (unlikely(schemaXmlMapIt == schemaXmlMap.end()))
             throw DataException(50068, "missing XDB.X$QN" + tokSuf + " table, insert failed");
         schemaXmlMapIt->second->dictXdbXQnAdd(xdbXQn);
         touched = true;
     }
 
     void Schema::dictSysCColDrop(SysCCol* sysCCol) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "delete SYS.CCOL$ (ROWID: " + sysCCol->rowId.toString() +
-                                        ", CON#: " + std::to_string(sysCCol->con) +
-                                        ", INTCOL#: " + std::to_string(sysCCol->intCol) +
-                                        ", OBJ#: " + std::to_string(sysCCol->obj) +
-                                        ", SPARE1: " + sysCCol->spare1.toString() + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "delete SYS.CCOL$ (ROWID: " + sysCCol->rowId.toString() +
+                                             ", CON#: " + std::to_string(sysCCol->con) +
+                                             ", INTCOL#: " + std::to_string(sysCCol->intCol) +
+                                             ", OBJ#: " + std::to_string(sysCCol->obj) +
+                                             ", SPARE1: " + sysCCol->spare1.toString() + ")");
         auto sysCColMapRowIdIt = sysCColMapRowId.find(sysCCol->rowId);
         if (sysCColMapRowIdIt == sysCColMapRowId.end())
             return;
@@ -1567,11 +1567,11 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictSysCDefDrop(SysCDef* sysCDef) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "delete SYS.CDEF$ (ROWID: " + sysCDef->rowId.toString() +
-                                        ", CON#: " + std::to_string(sysCDef->con) +
-                                        ", OBJ#: " + std::to_string(sysCDef->obj) +
-                                        ", TYPE: " + std::to_string(sysCDef->type) + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "delete SYS.CDEF$ (ROWID: " + sysCDef->rowId.toString() +
+                                             ", CON#: " + std::to_string(sysCDef->con) +
+                                             ", OBJ#: " + std::to_string(sysCDef->obj) +
+                                             ", TYPE: " + std::to_string(sysCDef->type) + ")");
         auto sysCDefMapRowIdIt = sysCDefMapRowId.find(sysCDef->rowId);
         if (sysCDefMapRowIdIt == sysCDefMapRowId.end())
             return;
@@ -1596,21 +1596,21 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictSysColDrop(SysCol* sysCol) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "delete SYS.COL$ (ROWID: " + sysCol->rowId.toString() +
-                                        ", OBJ#: " + std::to_string(sysCol->obj) +
-                                        ", COL#: " + std::to_string(sysCol->col) +
-                                        ", SEGCOL#: " + std::to_string(sysCol->segCol) +
-                                        ", INTCOL#: " + std::to_string(sysCol->intCol) +
-                                        ", NAME: '" + sysCol->name +
-                                        "', TYPE#: " + std::to_string(sysCol->type) +
-                                        ", LENGTH: " + std::to_string(sysCol->length) +
-                                        ", PRECISION#: " + std::to_string(sysCol->precision) +
-                                        ", SCALE: " + std::to_string(sysCol->scale) +
-                                        ", CHARSETFORM: " + std::to_string(sysCol->charsetForm) +
-                                        ", CHARSETID: " + std::to_string(sysCol->charsetId) +
-                                        ", NULL$: " + std::to_string(sysCol->null_) +
-                                        ", PROPERTY: " + sysCol->property.toString() + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "delete SYS.COL$ (ROWID: " + sysCol->rowId.toString() +
+                                             ", OBJ#: " + std::to_string(sysCol->obj) +
+                                             ", COL#: " + std::to_string(sysCol->col) +
+                                             ", SEGCOL#: " + std::to_string(sysCol->segCol) +
+                                             ", INTCOL#: " + std::to_string(sysCol->intCol) +
+                                             ", NAME: '" + sysCol->name +
+                                             "', TYPE#: " + std::to_string(sysCol->type) +
+                                             ", SIZE: " + std::to_string(sysCol->length) +
+                                             ", PRECISION#: " + std::to_string(sysCol->precision) +
+                                             ", SCALE: " + std::to_string(sysCol->scale) +
+                                             ", CHARSETFORM: " + std::to_string(sysCol->charsetForm) +
+                                             ", CHARSETID: " + std::to_string(sysCol->charsetId) +
+                                             ", NULL$: " + std::to_string(sysCol->null_) +
+                                             ", PROPERTY: " + sysCol->property.toString() + ")");
         auto sysColMapRowIdIt = sysColMapRowId.find(sysCol->rowId);
         if (sysColMapRowIdIt == sysColMapRowId.end())
             return;
@@ -1629,10 +1629,10 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictSysDeferredStgDrop(SysDeferredStg* sysDeferredStg) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "delete SYS.DEFERRED_STG$ (ROWID: " + sysDeferredStg->rowId.toString() +
-                                        ", OBJ#: " + std::to_string(sysDeferredStg->obj) +
-                                        ", FLAGS_STG: " + sysDeferredStg->flagsStg.toString() + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "delete SYS.DEFERRED_STG$ (ROWID: " + sysDeferredStg->rowId.toString() +
+                                             ", OBJ#: " + std::to_string(sysDeferredStg->obj) +
+                                             ", FLAGS_STG: " + sysDeferredStg->flagsStg.toString() + ")");
         auto sysDeferredStgMapRowIdIt = sysDeferredStgMapRowId.find(sysDeferredStg->rowId);
         if (sysDeferredStgMapRowIdIt == sysDeferredStgMapRowId.end())
             return;
@@ -1649,11 +1649,11 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictSysEColDrop(SysECol* sysECol) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "delete SYS.ECOL$ (ROWID: " + sysECol->rowId.toString() +
-                                        ", TABOBJ#: " + std::to_string(sysECol->tabObj) +
-                                        ", COLNUM: " + std::to_string(sysECol->colNum) +
-                                        ", GUARD_ID: " + std::to_string(sysECol->guardId) + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "delete SYS.ECOL$ (ROWID: " + sysECol->rowId.toString() +
+                                             ", TABOBJ#: " + std::to_string(sysECol->tabObj) +
+                                             ", COLNUM: " + std::to_string(sysECol->colNum) +
+                                             ", GUARD_ID: " + std::to_string(sysECol->guardId) + ")");
         auto sysEColMapRowIdIt = sysEColMapRowId.find(sysECol->rowId);
         if (sysEColMapRowIdIt == sysEColMapRowId.end())
             return;
@@ -1672,13 +1672,13 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictSysLobDrop(SysLob* sysLob) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "delete SYS.LOB$ (ROWID: " + sysLob->rowId.toString() +
-                                        ", OBJ#: " + std::to_string(sysLob->obj) +
-                                        ", COL#: " + std::to_string(sysLob->col) +
-                                        ", INTCOL#: " + std::to_string(sysLob->intCol) +
-                                        ", LOBJ#: " + std::to_string(sysLob->lObj) +
-                                        ", TS#: " + std::to_string(sysLob->ts) + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "delete SYS.LOB$ (ROWID: " + sysLob->rowId.toString() +
+                                             ", OBJ#: " + std::to_string(sysLob->obj) +
+                                             ", COL#: " + std::to_string(sysLob->col) +
+                                             ", INTCOL#: " + std::to_string(sysLob->intCol) +
+                                             ", LOBJ#: " + std::to_string(sysLob->lObj) +
+                                             ", TS#: " + std::to_string(sysLob->ts) + ")");
         auto sysLobMapRowIdIt = sysLobMapRowId.find(sysLob->rowId);
         if (sysLobMapRowIdIt == sysLobMapRowId.end())
             return;
@@ -1703,10 +1703,10 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictSysLobCompPartDrop(SysLobCompPart* sysLobCompPart) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "delete SYS.LOBCOMPPART$ (ROWID: " + sysLobCompPart->rowId.toString() +
-                                        ", PARTOBJ#: " + std::to_string(sysLobCompPart->partObj) +
-                                        ", LOBJ#: " + std::to_string(sysLobCompPart->lObj) + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "delete SYS.LOBCOMPPART$ (ROWID: " + sysLobCompPart->rowId.toString() +
+                                             ", PARTOBJ#: " + std::to_string(sysLobCompPart->partObj) +
+                                             ", LOBJ#: " + std::to_string(sysLobCompPart->lObj) + ")");
         auto sysLobCompPartMapRowIdIt = sysLobCompPartMapRowId.find(sysLobCompPart->rowId);
         if (sysLobCompPartMapRowIdIt == sysLobCompPartMapRowId.end())
             return;
@@ -1733,11 +1733,11 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictSysLobFragDrop(SysLobFrag* sysLobFrag) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "delete SYS.LOBFRAG$ (ROWID: " + sysLobFrag->rowId.toString() +
-                                        ", FRAGOBJ#: " + std::to_string(sysLobFrag->fragObj) +
-                                        ", PARENTOBJ#: " + std::to_string(sysLobFrag->parentObj) +
-                                        ", TS#: " + std::to_string(sysLobFrag->ts) + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "delete SYS.LOBFRAG$ (ROWID: " + sysLobFrag->rowId.toString() +
+                                             ", FRAGOBJ#: " + std::to_string(sysLobFrag->fragObj) +
+                                             ", PARENTOBJ#: " + std::to_string(sysLobFrag->parentObj) +
+                                             ", TS#: " + std::to_string(sysLobFrag->ts) + ")");
         auto sysLobFragMapRowIdIt = sysLobFragMapRowId.find(sysLobFrag->rowId);
         if (sysLobFragMapRowIdIt == sysLobFragMapRowId.end())
             return;
@@ -1765,14 +1765,14 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictSysObjDrop(SysObj* sysObj) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "delete SYS.OBJ$ (ROWID: " + sysObj->rowId.toString() +
-                                        ", OWNER#: " + std::to_string(sysObj->owner) +
-                                        ", OBJ#: " + std::to_string(sysObj->obj) +
-                                        ", DATAOBJ#: " + std::to_string(sysObj->dataObj) +
-                                        ", TYPE#: " + std::to_string(sysObj->type) +
-                                        ", NAME: '" + sysObj->name +
-                                        "', FLAGS: " + sysObj->flags.toString() + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "delete SYS.OBJ$ (ROWID: " + sysObj->rowId.toString() +
+                                             ", OWNER#: " + std::to_string(sysObj->owner) +
+                                             ", OBJ#: " + std::to_string(sysObj->obj) +
+                                             ", DATAOBJ#: " + std::to_string(sysObj->dataObj) +
+                                             ", TYPE#: " + std::to_string(sysObj->type) +
+                                             ", NAME: '" + sysObj->name +
+                                             "', FLAGS: " + sysObj->flags.toString() + ")");
         auto sysObjMapRowIdIt = sysObjMapRowId.find(sysObj->rowId);
         if (sysObjMapRowIdIt == sysObjMapRowId.end())
             return;
@@ -1797,13 +1797,13 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictSysTabDrop(SysTab* sysTab) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "delete SYS.TAB$ (ROWID: " + sysTab->rowId.toString() +
-                                        ", OBJ#: " + std::to_string(sysTab->obj) +
-                                        ", DATAOBJ#: " + std::to_string(sysTab->dataObj) +
-                                        ", CLUCOLS: " + std::to_string(sysTab->cluCols) +
-                                        ", FLAGS: " + sysTab->flags.toString() +
-                                        ", PROPERTY: " + sysTab->property.toString() + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "delete SYS.TAB$ (ROWID: " + sysTab->rowId.toString() +
+                                             ", OBJ#: " + std::to_string(sysTab->obj) +
+                                             ", DATAOBJ#: " + std::to_string(sysTab->dataObj) +
+                                             ", CLUCOLS: " + std::to_string(sysTab->cluCols) +
+                                             ", FLAGS: " + sysTab->flags.toString() +
+                                             ", PROPERTY: " + sysTab->property.toString() + ")");
         auto sysTabMapRowIdIt = sysTabMapRowId.find(sysTab->rowId);
         if (sysTabMapRowIdIt == sysTabMapRowId.end())
             return;
@@ -1820,11 +1820,11 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictSysTabComPartDrop(SysTabComPart* sysTabComPart) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "delete SYS.TABCOMPART$ (ROWID: " + sysTabComPart->rowId.toString() +
-                                        ", OBJ#: " + std::to_string(sysTabComPart->obj) +
-                                        ", DATAOBJ#: " + std::to_string(sysTabComPart->dataObj) +
-                                        ", BO#: " + std::to_string(sysTabComPart->bo) + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "delete SYS.TABCOMPART$ (ROWID: " + sysTabComPart->rowId.toString() +
+                                             ", OBJ#: " + std::to_string(sysTabComPart->obj) +
+                                             ", DATAOBJ#: " + std::to_string(sysTabComPart->dataObj) +
+                                             ", BO#: " + std::to_string(sysTabComPart->bo) + ")");
         auto sysTabComPartMapRowIdIt = sysTabComPartMapRowId.find(sysTabComPart->rowId);
         if (sysTabComPartMapRowIdIt == sysTabComPartMapRowId.end())
             return;
@@ -1849,11 +1849,11 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictSysTabPartDrop(SysTabPart* sysTabPart) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "delete SYS.TABPART$ (ROWID: " + sysTabPart->rowId.toString() +
-                                        ", OBJ#: " + std::to_string(sysTabPart->obj) +
-                                        ", DATAOBJ#: " + std::to_string(sysTabPart->dataObj) +
-                                        ", BO#: " + std::to_string(sysTabPart->bo) + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "delete SYS.TABPART$ (ROWID: " + sysTabPart->rowId.toString() +
+                                             ", OBJ#: " + std::to_string(sysTabPart->obj) +
+                                             ", DATAOBJ#: " + std::to_string(sysTabPart->dataObj) +
+                                              ", BO#: " + std::to_string(sysTabPart->bo) + ")");
         auto sysTabPartMapRowIdIt = sysTabPartMapRowId.find(sysTabPart->rowId);
         if (sysTabPartMapRowIdIt == sysTabPartMapRowId.end())
             return;
@@ -1872,8 +1872,8 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictSysTabSubPartDrop(SysTabSubPart* sysTabSubPart) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "delete SYS.TABSUBPART$ (ROWID: " + sysTabSubPart->rowId.toString() +
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "delete SYS.TABSUBPART$ (ROWID: " + sysTabSubPart->rowId.toString() +
                                         ", OBJ#: " + std::to_string(sysTabSubPart->obj) +
                                         ", DATAOBJ#: " + std::to_string(sysTabSubPart->dataObj) +
                                         ", POBJ#: " + std::to_string(sysTabSubPart->pObj) + ")");
@@ -1897,11 +1897,11 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictSysTsDrop(SysTs* sysTs) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "delete SYS.TS$ (ROWID: " + sysTs->rowId.toString() +
-                                        ", TS#: " + std::to_string(sysTs->ts) +
-                                        ", NAME: '" + sysTs->name +
-                                        "', BLOCKSIZE: " + std::to_string(sysTs->blockSize) + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "delete SYS.TS$ (ROWID: " + sysTs->rowId.toString() +
+                                             ", TS#: " + std::to_string(sysTs->ts) +
+                                             ", NAME: '" + sysTs->name +
+                                             "', BLOCKSIZE: " + std::to_string(sysTs->blockSize) + ")");
         auto sysTsMapRowIdIt = sysTsMapRowId.find(sysTs->rowId);
         if (sysTsMapRowIdIt == sysTsMapRowId.end())
             return;
@@ -1916,11 +1916,11 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictSysUserDrop(SysUser* sysUser) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "delete SYS.USER$ (ROWID: " + sysUser->rowId.toString() +
-                                        ", USER#: " + std::to_string(sysUser->user) +
-                                        ", NAME: '" + sysUser->name +
-                                        "', SPARE1: " + sysUser->spare1.toString() + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "delete SYS.USER$ (ROWID: " + sysUser->rowId.toString() +
+                                             ", USER#: " + std::to_string(sysUser->user) +
+                                             ", NAME: '" + sysUser->name +
+                                             "', SPARE1: " + sysUser->spare1.toString() + ")");
         auto sysUserMapRowIdIt = sysUserMapRowId.find(sysUser->rowId);
         if (sysUserMapRowIdIt == sysUserMapRowId.end())
             return;
@@ -1935,12 +1935,12 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictXdbTtSetDrop(XdbTtSet* xdbTtSet) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "delete XDB.XDB$TTSET (ROWID: " + xdbTtSet->rowId.toString() +
-                                        ", GUID: '" + xdbTtSet->guid +
-                                        "', TOKSUF: '" + xdbTtSet->tokSuf +
-                                        "', FLAGS: " + std::to_string(xdbTtSet->flags) +
-                                        ", OBJ#: " + std::to_string(xdbTtSet->obj) + ")");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "delete XDB.XDB$TTSET (ROWID: " + xdbTtSet->rowId.toString() +
+                                             ", GUID: '" + xdbTtSet->guid +
+                                             "', TOKSUF: '" + xdbTtSet->tokSuf +
+                                             "', FLAGS: " + std::to_string(xdbTtSet->flags) +
+                                             ", OBJ#: " + std::to_string(xdbTtSet->obj) + ")");
         auto xdbTtSetMapRowIdIt = xdbTtSetMapRowId.find(xdbTtSet->rowId);
         if (xdbTtSetMapRowIdIt == xdbTtSetMapRowId.end())
             return;
@@ -1955,41 +1955,41 @@ namespace OpenLogReplicator {
     }
 
     void Schema::dictXdbXNmDrop(const std::string& tokSuf, XdbXNm* xdbXNm) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "delete XDB.X$NM" + tokSuf + " (ROWID: " + xdbXNm->rowId.toString() +
-                                        ", NMSPCURI: '" + xdbXNm->nmSpcUri +
-                                        "', ID: '" + xdbXNm->id + "')");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "delete XDB.X$NM" + tokSuf + " (ROWID: " + xdbXNm->rowId.toString() +
+                                             ", NMSPCURI: '" + xdbXNm->nmSpcUri +
+                                             "', ID: '" + xdbXNm->id + "')");
 
         auto schemaXmlMapIt = schemaXmlMap.find(tokSuf);
-        if (schemaXmlMapIt == schemaXmlMap.end())
+        if (unlikely(schemaXmlMapIt == schemaXmlMap.end()))
             throw DataException(50068, "missing XDB.X$NM" + tokSuf + " table, delete failed");
         schemaXmlMapIt->second->dictXdbXNmDrop(xdbXNm);
         touched = true;
     }
 
     void Schema::dictXdbXPtDrop(const std::string& tokSuf, XdbXPt* xdbXPt) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "delete XDB.X$PT" + tokSuf + " (ROWID: " + xdbXPt->rowId.toString() +
-                                        ", PATH: '" + xdbXPt->path +
-                                        "', ID: '" + xdbXPt->id + "')");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "delete XDB.X$PT" + tokSuf + " (ROWID: " + xdbXPt->rowId.toString() +
+                                             ", PATH: '" + xdbXPt->path +
+                                             "', ID: '" + xdbXPt->id + "')");
 
         auto schemaXmlMapIt = schemaXmlMap.find(tokSuf);
-        if (schemaXmlMapIt == schemaXmlMap.end())
+        if (unlikely(schemaXmlMapIt == schemaXmlMap.end()))
             throw DataException(50068, "missing XDB.X$PT" + tokSuf + " table, delete failed");
         schemaXmlMapIt->second->dictXdbXPtDrop(xdbXPt);
         touched = true;
     }
 
     void Schema::dictXdbXQnDrop(const std::string& tokSuf, XdbXQn* xdbXQn) {
-        if (ctx->trace & TRACE_SYSTEM)
-            ctx->logTrace(TRACE_SYSTEM, "delete XDB.X$QN" + tokSuf + " (ROWID: " + xdbXQn->rowId.toString() +
-                                        ", NMSPCID '" + xdbXQn->nmSpcId +
-                                        "', LOCALNAME: '" + xdbXQn->localName +
-                                        "', FLAGS: '" + xdbXQn->flags +
-                                        "', ID: '" + xdbXQn->id + "')");
+        if (unlikely(ctx->trace & Ctx::TRACE_SYSTEM))
+            ctx->logTrace(Ctx::TRACE_SYSTEM, "delete XDB.X$QN" + tokSuf + " (ROWID: " + xdbXQn->rowId.toString() +
+                                             ", NMSPCID '" + xdbXQn->nmSpcId +
+                                             "', LOCALNAME: '" + xdbXQn->localName +
+                                             "', FLAGS: '" + xdbXQn->flags +
+                                             "', ID: '" + xdbXQn->id + "')");
 
         auto schemaXmlMapIt = schemaXmlMap.find(tokSuf);
-        if (schemaXmlMapIt == schemaXmlMap.end())
+        if (unlikely(schemaXmlMapIt == schemaXmlMap.end()))
             throw DataException(50068, "missing XDB.X$QN" + tokSuf + " table, delete failed");
         schemaXmlMapIt->second->dictXdbXQnDrop(xdbXQn);
         touched = true;
@@ -2125,7 +2125,7 @@ namespace OpenLogReplicator {
 
     XdbXNm* Schema::dictXdbXNmFind(const std::string& tokSuf, typeRowId rowId) {
         auto schemaXmlMapIt = schemaXmlMap.find(tokSuf);
-        if (schemaXmlMapIt == schemaXmlMap.end())
+        if (unlikely(schemaXmlMapIt == schemaXmlMap.end()))
             throw DataException(50068, "missing XDB.X$NM" + tokSuf + " table, find failed");
         XmlCtx* xmlCtx = schemaXmlMapIt->second;
 
@@ -2134,7 +2134,7 @@ namespace OpenLogReplicator {
 
     XdbXPt* Schema::dictXdbXPtFind(const std::string& tokSuf, typeRowId rowId) {
         auto schemaXmlMapIt = schemaXmlMap.find(tokSuf);
-        if (schemaXmlMapIt == schemaXmlMap.end())
+        if (unlikely(schemaXmlMapIt == schemaXmlMap.end()))
             throw DataException(50068, "missing XDB.X$PT" + tokSuf + " table, find failed");
         XmlCtx* xmlCtx = schemaXmlMapIt->second;
 
@@ -2143,7 +2143,7 @@ namespace OpenLogReplicator {
 
     XdbXQn* Schema::dictXdbXQnFind(const std::string& tokSuf, typeRowId rowId) {
         auto schemaXmlMapIt = schemaXmlMap.find(tokSuf);
-        if (schemaXmlMapIt == schemaXmlMap.end())
+        if (unlikely(schemaXmlMapIt == schemaXmlMap.end()))
             throw DataException(50068, "missing XDB.X$QN" + tokSuf + " table, find failed");
         XmlCtx* xmlCtx = schemaXmlMapIt->second;
 
@@ -2207,14 +2207,14 @@ namespace OpenLogReplicator {
     }
 
     void Schema::addTableToDict(OracleTable* table) {
-        if (tableMap.find(table->obj) != tableMap.end())
+        if (unlikely(tableMap.find(table->obj) != tableMap.end()))
             throw DataException(50031, "can't add table (obj: " + std::to_string(table->obj) + ", dataobj: " + std::to_string(table->dataObj) + ")");
 
         tableMap.insert_or_assign(table->obj, table);
 
         for (auto lob: table->lobs) {
             for (auto dataObj: lob->lobIndexes) {
-                if (lobIndexMap.find(dataObj) == lobIndexMap.end())
+                if (likely(lobIndexMap.find(dataObj) == lobIndexMap.end()))
                     lobIndexMap.insert_or_assign(dataObj, lob);
                 else
                     throw DataException(50032, "can't add lob index element (dataobj: " + std::to_string(dataObj) + ")");
@@ -2226,7 +2226,7 @@ namespace OpenLogReplicator {
             }
         }
 
-        if (tablePartitionMap.find(table->obj) == tablePartitionMap.end())
+        if (likely(tablePartitionMap.find(table->obj) == tablePartitionMap.end()))
             tablePartitionMap.insert_or_assign(table->obj, table);
         else
             throw DataException(50033, "can't add partition (obj: " + std::to_string(table->obj) + ", dataobj: " +
@@ -2236,7 +2236,7 @@ namespace OpenLogReplicator {
             typeObj obj = objx >> 32;
             typeDataObj dataObj = objx & 0xFFFFFFFF;
 
-            if (tablePartitionMap.find(obj) == tablePartitionMap.end())
+            if (likely(tablePartitionMap.find(obj) == tablePartitionMap.end()))
                 tablePartitionMap.insert_or_assign(obj, table);
             else
                 throw DataException(50034, "can't add partition element (obj: " + std::to_string(obj) + ", dataobj: " +
@@ -2246,7 +2246,7 @@ namespace OpenLogReplicator {
 
     void Schema::removeTableFromDict(OracleTable* table) {
         auto tablePartitionMapIt = tablePartitionMap.find(table->obj);
-        if (tablePartitionMapIt != tablePartitionMap.end())
+        if (likely(tablePartitionMapIt != tablePartitionMap.end()))
             tablePartitionMap.erase(tablePartitionMapIt);
         else
             throw DataException(50035, "can't remove partition (obj: " + std::to_string(table->obj) + ", dataobj: " +
@@ -2257,7 +2257,7 @@ namespace OpenLogReplicator {
             typeDataObj dataObj = objx & 0xFFFFFFFF;
 
             tablePartitionMapIt = tablePartitionMap.find(obj);
-            if (tablePartitionMapIt != tablePartitionMap.end())
+            if (likely(tablePartitionMapIt != tablePartitionMap.end()))
                 tablePartitionMap.erase(tablePartitionMapIt);
             else
                 throw DataException(50036, "can't remove table partition element (obj: " + std::to_string(obj) + ", dataobj: " +
@@ -2267,7 +2267,7 @@ namespace OpenLogReplicator {
         for (const auto lob: table->lobs) {
             for (auto dataObj: lob->lobIndexes) {
                 auto lobIndexMapIt = lobIndexMap.find(dataObj);
-                if (lobIndexMapIt != lobIndexMap.end())
+                if (likely(lobIndexMapIt != lobIndexMap.end()))
                     lobIndexMap.erase(lobIndexMapIt);
                 else
                     throw DataException(50037, "can't remove lob index element (dataobj: " + std::to_string(dataObj) + ")");
@@ -2281,7 +2281,7 @@ namespace OpenLogReplicator {
         }
 
         auto tableMapIt = tableMap.find(table->obj);
-        if (tableMapIt != tableMap.end())
+        if (likely(tableMapIt != tableMap.end()))
             tableMap.erase(tableMapIt);
         else
             throw DataException(50038, "can't remove table (obj: " + std::to_string(table->obj) + ", dataobj: " +
@@ -2307,7 +2307,7 @@ namespace OpenLogReplicator {
         }
 
         // SYS.OBJ$
-        if (!FLAG(REDO_FLAGS_ADAPTIVE_SCHEMA)) {
+        if (!ctx->flagsSet(Ctx::REDO_FLAGS_ADAPTIVE_SCHEMA)) {
             // delete objects owned by users that are not in the list of users
             for (auto sysObj: sysObjSetTouched) {
                 auto sysUserMapUserIt = sysUserMapUser.find(sysObj->owner);
@@ -2470,20 +2470,19 @@ namespace OpenLogReplicator {
     }
 
     void Schema::updateXmlCtx() {
-        if ((ctx->flags & REDO_FLAGS_EXPERIMENTAL_XMLTYPE) != 0) {
+        if (ctx->flagsSet(Ctx::REDO_FLAGS_EXPERIMENTAL_XMLTYPE)) {
             xmlCtxDefault = nullptr;
-            auto schemaXmlMapIt = schemaXmlMap.begin();
-            while (schemaXmlMapIt != schemaXmlMap.end()) {
+            auto schemaXmlMapIt = schemaXmlMap.cbegin();
+            while (schemaXmlMapIt != schemaXmlMap.cend()) {
                 if (schemaXmlMapIt->second->flags == 0) {
                     xmlCtxDefault = schemaXmlMapIt->second;
                     break;
                 }
                 ++schemaXmlMapIt;
             }
-            if (xmlCtxDefault == nullptr)
+            if (unlikely(xmlCtxDefault == nullptr))
                 throw DataException(50069, "no active XML context found");
         }
-
     }
 
     void Schema::buildMaps(const std::string& owner, const std::string& table, const std::vector<std::string>& keys, const std::string& keysStr,
@@ -2505,7 +2504,7 @@ namespace OpenLogReplicator {
             SysUser* sysUser = nullptr;
             auto sysUserMapUserIt = sysUserMapUser.find(sysObj->owner);
             if (sysUserMapUserIt == sysUserMapUser.end()) {
-                if (!FLAG(REDO_FLAGS_ADAPTIVE_SCHEMA))
+                if (!ctx->flagsSet(Ctx::REDO_FLAGS_ADAPTIVE_SCHEMA))
                     continue;
                 sysUserAdaptive.name = "USER_" + std::to_string(sysObj->obj);
                 sysUser = &sysUserAdaptive;
@@ -2517,7 +2516,7 @@ namespace OpenLogReplicator {
 
             // Table already added with another rule
             if (tableMap.find(sysObj->obj) != tableMap.end()) {
-                if (ctx->logLevel >= LOG_LEVEL_DEBUG)
+                if (ctx->logLevel >= Ctx::LOG_LEVEL_DEBUG)
                     msgs.push_back(sysUser->name + "." + sysObj->name + " (obj: " + std::to_string(sysObj->obj) + ") - already added (skipped)");
                 continue;
             }
@@ -2525,7 +2524,7 @@ namespace OpenLogReplicator {
             // Object without SYS.TAB$
             auto sysTabMapObjIt = sysTabMapObj.find(sysObj->obj);
             if (sysTabMapObjIt == sysTabMapObj.end()) {
-                if (ctx->logLevel >= LOG_LEVEL_DEBUG)
+                if (ctx->logLevel >= Ctx::LOG_LEVEL_DEBUG)
                     msgs.push_back(sysUser->name + "." + sysObj->name + " (obj: " + std::to_string(sysObj->obj) + ") - SYS.TAB$ entry missing (skipped)");
                 continue;
             }
@@ -2533,28 +2532,28 @@ namespace OpenLogReplicator {
 
             // Skip binary objects
             if (sysTab->isBinary()) {
-                if (ctx->logLevel >= LOG_LEVEL_DEBUG)
+                if (ctx->logLevel >= Ctx::LOG_LEVEL_DEBUG)
                     msgs.push_back(sysUser->name + "." + sysObj->name + " (obj: " + std::to_string(sysObj->obj) + ") - binary (skipped");
                 continue;
             }
 
             // Skip Index Organized Tables (IOT)
             if (sysTab->isIot()) {
-                if (ctx->logLevel >= LOG_LEVEL_DEBUG)
+                if (ctx->logLevel >= Ctx::LOG_LEVEL_DEBUG)
                     msgs.push_back(sysUser->name + "." + sysObj->name + " (obj: " + std::to_string(sysObj->obj) + ") - IOT (skipped)");
                 continue;
             }
 
             // Skip temporary tables
             if (sysObj->isTemporary()) {
-                if (ctx->logLevel >= LOG_LEVEL_DEBUG)
+                if (ctx->logLevel >= Ctx::LOG_LEVEL_DEBUG)
                     msgs.push_back(sysUser->name + "." + sysObj->name + " (obj: " + std::to_string(sysObj->obj) + ") - temporary table (skipped)");
                 continue;
             }
 
             // Skip nested tables
             if (sysTab->isNested()) {
-                if (ctx->logLevel >= LOG_LEVEL_DEBUG)
+                if (ctx->logLevel >= Ctx::LOG_LEVEL_DEBUG)
                     msgs.push_back(sysUser->name + "." + sysObj->name + " (obj: " + std::to_string(sysObj->obj) + ") - nested table (skipped)");
                 continue;
             }
@@ -2570,7 +2569,7 @@ namespace OpenLogReplicator {
 
             // Skip compressed tables
             if (compressed) {
-                if (ctx->logLevel >= LOG_LEVEL_DEBUG)
+                if (ctx->logLevel >= Ctx::LOG_LEVEL_DEBUG)
                     msgs.push_back(sysUser->name + "." + sysObj->name + " (obj: " + std::to_string(sysObj->obj) + ") - compressed table (skipped)");
                 continue;
             }
@@ -2615,7 +2614,7 @@ namespace OpenLogReplicator {
                 }
             }
 
-            if (!DISABLE_CHECKS(DISABLE_CHECKS_SUPPLEMENTAL_LOG) && (options & OPTIONS_SYSTEM_TABLE) == 0 &&
+            if (!ctx->disableChecksSet(Ctx::DISABLE_CHECKS_SUPPLEMENTAL_LOG) && (options & OracleTable::OPTIONS_SYSTEM_TABLE) == 0 &&
                 !suppLogDbAll && !sysUser->isSuppLogAll()) {
 
                 SysCDefKey sysCDefKeyFirst(sysObj->obj, 0);
@@ -2649,7 +2648,7 @@ namespace OpenLogReplicator {
                     guardSeg = sysEColIt->second->guardId;
 
                 if (sysCol->charsetForm == 1) {
-                    if (sysCol->type == SYS_COL_TYPE_CLOB) {
+                    if (sysCol->type == SysCol::TYPE_CLOB) {
                         charmapId = defaultCharacterNcharMapId;
                     } else
                         charmapId = defaultCharacterMapId;
@@ -2658,9 +2657,9 @@ namespace OpenLogReplicator {
                 else
                     charmapId = sysCol->charsetId;
 
-                if (sysCol->type == SYS_COL_TYPE_VARCHAR || sysCol->type == SYS_COL_TYPE_CHAR || sysCol->type == SYS_COL_TYPE_CLOB) {
+                if (sysCol->type == SysCol::TYPE_VARCHAR || sysCol->type == SysCol::TYPE_CHAR || sysCol->type == SysCol::TYPE_CLOB) {
                     auto characterMapIt = locales->characterMap.find(charmapId);
-                    if (characterMapIt == locales->characterMap.end()) {
+                    if (unlikely(characterMapIt == locales->characterMap.end())) {
                         ctx->hint("check in database for name: SELECT NLS_CHARSET_NAME(" + std::to_string(charmapId) + ") FROM DUAL;");
                         throw DataException(50026, "table " + std::string(sysUser->name) + "." + sysObj->name +
                                                    " - unsupported character set id: " + std::to_string(charmapId) + " for column: " + sysCol->name);
@@ -2708,7 +2707,7 @@ namespace OpenLogReplicator {
                         supLogColMissing = true;
                 }
 
-                if (ctx->logLevel >= LOG_LEVEL_DEBUG)
+                if (ctx->logLevel >= Ctx::LOG_LEVEL_DEBUG)
                     msgs.push_back("- col: " + std::to_string(sysCol->segCol) + ": " + sysCol->name + " (pk: " + std::to_string(numPk) + ", S: " +
                                    std::to_string(numSup) + ", G: " + std::to_string(guardSeg) + ")");
 
@@ -2732,7 +2731,7 @@ namespace OpenLogReplicator {
                 columnTmp = new OracleColumn(sysCol->col, guardSeg, sysCol->segCol, columnName,
                                              sysCol->type, sysCol->length, sysCol->precision, sysCol->scale,
                                              numPk, charmapId, sysCol->isNullable(), sysCol->isHidden() &&
-                                                                                     !(xmlType && FLAG(REDO_FLAGS_EXPERIMENTAL_XMLTYPE)),
+                                                                                     !(xmlType && ctx->flagsSet(Ctx::REDO_FLAGS_EXPERIMENTAL_XMLTYPE)),
                                              sysCol->isStoredAsLob(), sysCol->isSystemGenerated(), sysCol->isNested(),
                                              sysCol->isUnused(), sysCol->isAdded(), sysCol->isGuard(), xmlType);
 
@@ -2740,7 +2739,7 @@ namespace OpenLogReplicator {
                 columnTmp = nullptr;
             }
 
-            if ((options & OPTIONS_SYSTEM_TABLE) == 0) {
+            if ((options & OracleTable::OPTIONS_SYSTEM_TABLE) == 0) {
                 SysLobKey sysLobKeyFirst(sysObj->obj, 0);
                 for (auto sysLobMapKeyIt = sysLobMapKey.upper_bound(sysLobKeyFirst);
                      sysLobMapKeyIt != sysLobMapKey.end() && sysLobMapKeyIt->first.obj == sysObj->obj; ++sysLobMapKeyIt) {
@@ -2748,12 +2747,12 @@ namespace OpenLogReplicator {
                     SysLob* sysLob = sysLobMapKeyIt->second;
 
                     auto sysObjMapObjIt = sysObjMapObj.find(sysLob->lObj);
-                    if (sysObjMapObjIt == sysObjMapObj.end())
+                    if (unlikely(sysObjMapObjIt == sysObjMapObj.end()))
                         throw DataException(50027, "table " + std::string(sysUser->name) + "." + sysObj->name + " couldn't find obj for lob " +
                                                    std::to_string(sysLob->lObj));
                     typeObj lobDataObj = sysObjMapObjIt->second->dataObj;
 
-                    if (ctx->logLevel >= LOG_LEVEL_DEBUG)
+                    if (ctx->logLevel >= Ctx::LOG_LEVEL_DEBUG)
                         msgs.push_back("- lob: " + std::to_string(sysLob->col) + ":" + std::to_string(sysLob->intCol) + ":" +
                                        std::to_string(lobDataObj) + ":" + std::to_string(sysLob->lObj));
 
@@ -2776,7 +2775,7 @@ namespace OpenLogReplicator {
                             continue;
 
                         lobTmp->addIndex(sysObjMapNameIt->first.dataObj);
-                        if ((ctx->trace & TRACE_LOB) != 0)
+                        if ((ctx->trace & Ctx::TRACE_LOB) != 0)
                             lobIndexesList << " " << std::dec << sysObjMapNameIt->first.dataObj << "/" << sysObjMapNameIt->second->obj;
                         ++lobIndexes;
                     }
@@ -2796,7 +2795,7 @@ namespace OpenLogReplicator {
 
                             SysLobFrag* sysLobFrag = sysLobFragMapKeyIt->second;
                             auto sysObjMapObjIt2 = sysObjMapObj.find(sysLobFrag->fragObj);
-                            if (sysObjMapObjIt2 == sysObjMapObj.end())
+                            if (unlikely(sysObjMapObjIt2 == sysObjMapObj.end()))
                                 throw DataException(50028, "table " + std::string(sysUser->name) + "." + sysObj->name +
                                                            " couldn't find obj for lob frag " + std::to_string(sysLobFrag->fragObj));
                             typeObj lobFragDataObj = sysObjMapObjIt2->second->dataObj;
@@ -2820,7 +2819,7 @@ namespace OpenLogReplicator {
 
                                 SysLobFrag* sysLobFrag = sysLobFragMapKeyIt->second;
                                 auto sysObjMapObjIt2 = sysObjMapObj.find(sysLobFrag->fragObj);
-                                if (sysObjMapObjIt2 == sysObjMapObj.end())
+                                if (unlikely(sysObjMapObjIt2 == sysObjMapObj.end()))
                                     throw DataException(50028, "table " + std::string(sysUser->name) + "." + sysObj->name +
                                                                " couldn't find obj for lob frag " + std::to_string(sysLobFrag->fragObj));
                                 typeObj lobFragDataObj = sysObjMapObjIt2->second->dataObj;
@@ -2833,7 +2832,7 @@ namespace OpenLogReplicator {
 
                     lobTmp->addPartition(lobTmp->dataObj, getLobBlockSize(sysLob->ts));
                     tableTmp->addLob(lobTmp);
-                    if ((ctx->trace & TRACE_LOB) != 0)
+                    if ((ctx->trace & Ctx::TRACE_LOB) != 0)
                         lobList << " " << std::dec << lobTmp->obj << "/" << lobTmp->dataObj << "/" << std::dec << lobTmp->lObj;
                     lobTmp = nullptr;
                 }
@@ -2883,7 +2882,7 @@ namespace OpenLogReplicator {
             }
 
             // Check if a table has all listed columns
-            if (static_cast<typeCol>(keys.size()) != keysCnt)
+            if (unlikely(static_cast<typeCol>(keys.size()) != keysCnt))
                 throw DataException(10041, "table " + std::string(sysUser->name) + "." + sysObj->name + " - couldn't find all column sets (" +
                                            keysStr + ")");
 
@@ -2900,7 +2899,7 @@ namespace OpenLogReplicator {
             if (sysTab->isRowMovement())
                 ss << ", row movement enabled";
 
-            if (!DISABLE_CHECKS(DISABLE_CHECKS_SUPPLEMENTAL_LOG) && (options & OPTIONS_SYSTEM_TABLE) == 0) {
+            if (!ctx->disableChecksSet(Ctx::DISABLE_CHECKS_SUPPLEMENTAL_LOG) && (options & OracleTable::OPTIONS_SYSTEM_TABLE) == 0) {
                 // Use a default primary key
                 if (keys.empty()) {
                     if (tableTmp->totalPk == 0)
@@ -2924,10 +2923,10 @@ namespace OpenLogReplicator {
         }
     }
 
-    uint16_t Schema::getLobBlockSize(typeTs ts) {
+    uint16_t Schema::getLobBlockSize(typeTs ts) const {
         auto sysTsMapTsIt = sysTsMapTs.find(ts);
         if (sysTsMapTsIt != sysTsMapTs.end()) {
-            uint32_t pageSize = sysTsMapTsIt->second->blockSize;
+            typeDba pageSize = sysTsMapTsIt->second->blockSize;
             if (pageSize == 8192)
                 return 8132;
             else if (pageSize == 16384)

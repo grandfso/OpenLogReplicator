@@ -69,15 +69,15 @@ namespace OpenLogReplicator {
 
         explicit Transaction(typeXid newXid, std::map<LobKey, uint8_t*>* newOrphanedLobs, XmlCtx* newXmlCtx);
 
-        void add(Metadata* metadata, TransactionBuffer* transactionBuffer, RedoLogRecord* redoLogRecord1);
-        void add(Metadata* metadata, TransactionBuffer* transactionBuffer, RedoLogRecord* redoLogRecord1, const RedoLogRecord* redoLogRecord2);
-        void rollbackLastOp(Metadata* metadata, TransactionBuffer* transactionBuffer, const RedoLogRecord* redoLogRecord1, const RedoLogRecord* redoLogRecord2);
-        void rollbackLastOp(Metadata* metadata, TransactionBuffer* transactionBuffer, const RedoLogRecord* redoLogRecord1);
+        void add(const Metadata* metadata, TransactionBuffer* transactionBuffer, RedoLogRecord* redoLogRecord1);
+        void add(const Metadata* metadata, TransactionBuffer* transactionBuffer, RedoLogRecord* redoLogRecord1, const RedoLogRecord* redoLogRecord2);
+        void rollbackLastOp(const Metadata* metadata, TransactionBuffer* transactionBuffer, const RedoLogRecord* redoLogRecord1, const RedoLogRecord* redoLogRecord2);
+        void rollbackLastOp(const Metadata* metadata, TransactionBuffer* transactionBuffer, const RedoLogRecord* redoLogRecord1);
         void flush(Metadata* metadata, TransactionBuffer* transactionBuffer, Builder* builder, typeScn lwnScn);
         void purge(TransactionBuffer* transactionBuffer);
 
-        void log(Ctx* ctx, const char* msg, const RedoLogRecord* redoLogRecord1) {
-            if (!dump || (ctx->trace & TRACE_DUMP) != 0)
+        inline void log(const Ctx* ctx, const char* msg, const RedoLogRecord* redoLogRecord1) const {
+            if (likely(!dump && (ctx->trace & Ctx::TRACE_DUMP) == 0))
                 return;
 
             ctx->info(0, std::string(msg) + " xid: " + xid.toString() +
@@ -95,7 +95,6 @@ namespace OpenLogReplicator {
                          " suppcc: " + std::to_string(static_cast<uint64_t>(redoLogRecord1->suppLogCC)) +
                          " dba: " + std::to_string(redoLogRecord1->dba) +
                          " slt: " + std::to_string(redoLogRecord1->slt) +
-                         " rci: " + std::to_string(static_cast<uint64_t>(redoLogRecord1->rci)) +
                          " seq: " + std::to_string(static_cast<uint64_t>(redoLogRecord1->seq)) +
                          " flg: " + std::to_string(redoLogRecord1->flg) +
                          " split: " + std::to_string(lastSplit) +

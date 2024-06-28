@@ -24,8 +24,6 @@ along with OpenLogReplicator; see the file LICENSE;  If not see
 #ifndef STATE_H_
 #define STATE_H_
 
-#define STATE_TYPE_DISK 0
-
 namespace OpenLogReplicator {
     class Ctx;
 
@@ -34,10 +32,12 @@ namespace OpenLogReplicator {
         Ctx* ctx;
 
     public:
+        static constexpr uint64_t TYPE_DISK = 0;
+
         State(Ctx* newCtx);
         virtual ~State();
 
-        virtual void list(std::set<std::string>& namesList) = 0;
+        virtual void list(std::set<std::string>& namesList) const = 0;
         [[nodiscard]] virtual bool read(const std::string& name, uint64_t maxSize, std::string& in) = 0;
         virtual void write(const std::string& name, typeScn scn, const std::ostringstream& out) = 0;
         virtual void drop(const std::string& name) = 0;

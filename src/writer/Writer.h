@@ -31,6 +31,8 @@ namespace OpenLogReplicator {
 
     class Writer : public Thread {
     protected:
+        static constexpr uint64_t CHECKPOINT_FILE_MAX_SIZE = 1024;
+
         std::string database;
         Builder* builder;
         Metadata* metadata;
@@ -40,7 +42,7 @@ namespace OpenLogReplicator {
         typeIdx checkpointIdx;
         time_t checkpointTime;
         uint64_t sentMessages;
-        uint64_t oldLength;
+        uint64_t oldSize;
         uint64_t currentQueueSize;
         uint64_t maxQueueSize;
         bool streaming;

@@ -22,13 +22,14 @@ along with OpenLogReplicator; see the file LICENSE;  If not see
 #ifndef CHARACTER_SET_ZHS16GBK_H_
 #define CHARACTER_SET_ZHS16GBK_H_
 
-#define ZHS16GBK_b1_min         0x81
-#define ZHS16GBK_b1_max         0xFE
-#define ZHS16GBK_b2_min         0x40
-#define ZHS16GBK_b2_max         0xFE
-
 namespace OpenLogReplicator {
     class CharacterSetZHS16GBK final : public CharacterSet16bit {
+    public:
+        static constexpr uint64_t ZHS16GBK_b1_min = 0x81;
+        static constexpr uint64_t ZHS16GBK_b1_max = 0xFE;
+        static constexpr uint64_t ZHS16GBK_b2_min = 0x40;
+        static constexpr uint64_t ZHS16GBK_b2_max = 0xFE;
+
     protected:
         static typeUnicode16 unicode_map_ZHS16GBK_2b[(ZHS16GBK_b1_max - ZHS16GBK_b1_min + 1) *
                                                      (ZHS16GBK_b2_max - ZHS16GBK_b2_min + 1)];
@@ -37,7 +38,7 @@ namespace OpenLogReplicator {
         CharacterSetZHS16GBK();
         ~CharacterSetZHS16GBK() override;
 
-        virtual typeUnicode decode(Ctx* ctx, typeXid xid, const uint8_t*& str, uint64_t& length) const override;
+        virtual typeUnicode decode(const Ctx* ctx, typeXid xid, const uint8_t*& str, uint64_t& length) const override;
     };
 }
 

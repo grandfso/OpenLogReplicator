@@ -26,21 +26,21 @@ namespace OpenLogReplicator {
     LobCtx::~LobCtx() {
     }
 
-    void LobCtx::checkOrphanedLobs(Ctx* ctx, const typeLobId& lobId, typeXid xid, uint64_t offset) {
+    void LobCtx::checkOrphanedLobs(const Ctx* ctx, const typeLobId& lobId, typeXid xid, uint64_t offset) {
         LobKey lobKey(lobId, 0);
         for (auto orphanedLobsIt = orphanedLobs->upper_bound(lobKey);
              orphanedLobsIt != orphanedLobs->end() && orphanedLobsIt->first.lobId == lobId;) {
 
             addLob(ctx, lobId, orphanedLobsIt->first.page, 0, orphanedLobsIt->second, xid, offset);
 
-            if (ctx->trace & TRACE_LOB)
-                ctx->logTrace(TRACE_LOB, "id: " + lobId.lower() + " page: " + std::to_string(orphanedLobsIt->first.page));
+            if (unlikely(ctx->trace & Ctx::TRACE_LOB))
+                ctx->logTrace(Ctx::TRACE_LOB, "id: " + lobId.lower() + " page: " + std::to_string(orphanedLobsIt->first.page));
 
             orphanedLobsIt = orphanedLobs->erase(orphanedLobsIt);
         }
     }
 
-    void LobCtx::addLob(Ctx* ctx, const typeLobId& lobId, typeDba page, uint64_t pageOffset, uint8_t* data, typeXid xid, uint64_t offset) {
+    void LobCtx::addLob(const Ctx* ctx, const typeLobId& lobId, typeDba page, uint64_t pageOffset, uint8_t* data, typeXid xid, uint64_t offset) {
         LobData* lobData;
         auto lobsIt = lobs.find(lobId);
         if (lobsIt != lobs.end()) {
@@ -53,8 +53,8 @@ namespace OpenLogReplicator {
         LobDataElement element(page, pageOffset);
         auto dataMapIt = lobData->dataMap.find(element);
         if (dataMapIt != lobData->dataMap.end()) {
-            if (ctx->trace & TRACE_LOB)
-                ctx->logTrace(TRACE_LOB, "id: " + lobId.lower() + " page: " + std::to_string(page) + " OVERWRITE");
+            if (unlikely(ctx->trace & Ctx::TRACE_LOB))
+                ctx->logTrace(Ctx::TRACE_LOB, "id: " + lobId.lower() + " page: " + std::to_string(page) + " OVERWRITE");
             delete[] dataMapIt->second;
         }
 
@@ -64,18 +64,18 @@ namespace OpenLogReplicator {
         if (redoLogRecordLob->lobPageSize != 0) {
             if (lobData->pageSize == 0) {
                 lobData->pageSize = redoLogRecordLob->lobPageSize;
-            } else if (lobData->pageSize != redoLogRecordLob->lobPageSize) {
+            } else if (unlikely(lobData->pageSize != redoLogRecordLob->lobPageSize)) {
                 throw RedoLogException(50003, "inconsistent page size lobid: " + lobId.upper() + ", new: " +
                                               std::to_string(redoLogRecordLob->lobPageSize) + ", already set to: " + std::to_string(lobData->pageSize) +
                                               ", xid: " + xid.toString() + ", offset: " + std::to_string(offset));
             }
         }
 
-        uint32_t pageNo = redoLogRecordLob->lobPageNo;
-        if (pageNo != INVALID_LOB_PAGE_NO) {
+        typeDba pageNo = redoLogRecordLob->lobPageNo;
+        if (pageNo != RedoLogRecord::INVALID_LOB_PAGE_NO) {
             auto indexMapIt = lobData->indexMap.find(page);
             if (indexMapIt != lobData->indexMap.end()) {
-                if (indexMapIt->second != page)
+                if (unlikely(indexMapIt->second != page))
                     throw RedoLogException(50004, "duplicate index lobid: " + lobId.upper() + ", page: " + std::to_string(page) +
                                                   ", already set to: " + std::to_string(indexMapIt->second) + ", xid: " + xid.toString() + ", offset: " +
                                                   std::to_string(offset));
@@ -101,7 +101,7 @@ namespace OpenLogReplicator {
         }
     }
 
-    void LobCtx::setList(typeDba page, const uint8_t* data, uint16_t length) {
+    void LobCtx::setList(typeDba page, const uint8_t* data, uint16_t size) {
         typeDba nextPage = 0;
         auto listMapIt = listMap.find(page);
         if (listMapIt != listMap.end()) {
@@ -111,18 +111,18 @@ namespace OpenLogReplicator {
             delete[] oldData;
         }
 
-        uint8_t* newData = new uint8_t[length];
+        uint8_t* newData = new uint8_t[size];
         typeDba* newPage = reinterpret_cast<typeDba*>(newData);
         *newPage = nextPage;
-        memcpy(newData + 4, data + 4, length - 4);
+        memcpy(newData + 4, data + 4, size - 4U);
 
         listMap.insert_or_assign(page, newData);
     }
 
-    void LobCtx::appendList(Ctx* ctx, typeDba page, uint8_t* data) {
+    void LobCtx::appendList(const Ctx* ctx, typeDba page, const uint8_t* data) {
         uint32_t aSiz;
-        uint32_t nEnt = ctx->read32(data + 4);
-        uint32_t sIdx = ctx->read32(data + 8);
+        const uint32_t nEnt = ctx->read32(data + 4);
+        const uint32_t sIdx = ctx->read32(data + 8);
         uint8_t* newData = new uint8_t[8 + (sIdx + nEnt) * 8];
 
         auto listMapIt = listMap.find(page);
@@ -150,7 +150,7 @@ namespace OpenLogReplicator {
         listMap.insert_or_assign(page, newData);
     }
 
-    void LobCtx::setLength(const typeLobId& lobId, uint32_t sizePages, uint16_t sizeRest) {
+    void LobCtx::setSize(const typeLobId& lobId, uint32_t sizePages, uint16_t sizeRest) {
         LobData* lobData;
         auto lobsIt = lobs.find(lobId);
         if (lobsIt != lobs.end()) {
@@ -164,7 +164,7 @@ namespace OpenLogReplicator {
         lobData->sizeRest = sizeRest;
     }
 
-    void LobCtx::setPage(const typeLobId& lobId, typeDba page, uint32_t pageNo, typeXid xid, uint64_t offset) {
+    void LobCtx::setPage(const typeLobId& lobId, typeDba page, typeDba pageNo, typeXid xid, uint64_t offset) {
         LobData* lobData;
         auto lobsIt = lobs.find(lobId);
         if (lobsIt != lobs.end()) {
@@ -176,7 +176,7 @@ namespace OpenLogReplicator {
 
         auto indexMapIt = lobData->indexMap.find(page);
         if (indexMapIt != lobData->indexMap.end()) {
-            if (indexMapIt->second != page)
+            if (unlikely(indexMapIt->second != page))
                 throw RedoLogException(50004, "duplicate index lobid: " + lobId.upper() + ", page: " + std::to_string(page) +
                                               ", already set to: " + std::to_string(indexMapIt->second) + ", xid: " + xid.toString() + ", offset: " +
                                               std::to_string(offset));

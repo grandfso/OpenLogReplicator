@@ -58,16 +58,16 @@ namespace OpenLogReplicator {
             schemaFormat(newSchemaFormat),
             columnFormat(newColumnFormat),
             unknownType(newUnknownType),
-            unconfirmedLength(0),
-            messageLength(0),
+            unconfirmedSize(0),
+            messageSize(0),
             messagePosition(0),
             flushBuffer(newFlushBuffer),
             valueBuffer(nullptr),
-            valueLength(0),
-            valueBufferLength(0),
+            valueSize(0),
+            valueBufferSize(0),
             valueBufferOld(nullptr),
-            valueLengthOld(0),
-            commitScn(ZERO_SCN),
+            valueSizeOld(0),
+            commitScn(Ctx::ZERO_SCN),
             lastXid(typeXid()),
             valuesMax(0),
             mergesMax(0),
@@ -82,7 +82,7 @@ namespace OpenLogReplicator {
             buffersAllocated(0),
             firstBuilderQueue(nullptr),
             lastBuilderQueue(nullptr),
-            lwnScn(ZERO_SCN),
+            lwnScn(Ctx::ZERO_SCN),
             lwnIdx(0) {
         memset(reinterpret_cast<void*>(valuesSet), 0, sizeof(valuesSet));
         memset(reinterpret_cast<void*>(valuesMerge), 0, sizeof(valuesMerge));
@@ -96,7 +96,7 @@ namespace OpenLogReplicator {
 
         while (firstBuilderQueue != nullptr) {
             BuilderQueue* nextBuffer = firstBuilderQueue->next;
-            ctx->freeMemoryChunk(MEMORY_MODULE_BUILDER, reinterpret_cast<uint8_t*>(firstBuilderQueue), true);
+            ctx->freeMemoryChunk(Ctx::MEMORY_MODULE_BUILDER, reinterpret_cast<uint8_t*>(firstBuilderQueue), true);
             firstBuilderQueue = nextBuffer;
             --buffersAllocated;
         }
@@ -119,100 +119,100 @@ namespace OpenLogReplicator {
 
     void Builder::initialize() {
         buffersAllocated = 1;
-        firstBuilderQueue = reinterpret_cast<BuilderQueue*>(ctx->getMemoryChunk(MEMORY_MODULE_BUILDER, true));
+        firstBuilderQueue = reinterpret_cast<BuilderQueue*>(ctx->getMemoryChunk(Ctx::MEMORY_MODULE_BUILDER, true));
         firstBuilderQueue->id = 0;
         firstBuilderQueue->next = nullptr;
         firstBuilderQueue->data = reinterpret_cast<uint8_t*>(firstBuilderQueue) + sizeof(struct BuilderQueue);
-        firstBuilderQueue->length = 0;
+        firstBuilderQueue->size = 0;
         firstBuilderQueue->start = 0;
         lastBuilderQueue = firstBuilderQueue;
 
         valueBuffer = new char[VALUE_BUFFER_MIN];
-        valueBufferLength = VALUE_BUFFER_MIN;
+        valueBufferSize = VALUE_BUFFER_MIN;
     }
 
-    void Builder::processValue(LobCtx* lobCtx, const XmlCtx* xmlCtx, const OracleTable* table, typeCol col, const uint8_t* data, uint64_t length,
+    void Builder::processValue(LobCtx* lobCtx, const XmlCtx* xmlCtx, const OracleTable* table, typeCol col, const uint8_t* data, uint32_t size,
                                uint64_t offset, bool after, bool compressed) {
         if (compressed) {
             std::string columnName("COMPRESSED");
-            columnRaw(columnName, data, length);
+            columnRaw(columnName, data, size);
             return;
         }
         if (table == nullptr) {
             std::string columnName("COL_" + std::to_string(col));
-            columnRaw(columnName, data, length);
+            columnRaw(columnName, data, size);
             return;
         }
         OracleColumn* column = table->columns[col];
-        if (FLAG(REDO_FLAGS_RAW_COLUMN_DATA)) {
-            columnRaw(column->name, data, length);
+        if (ctx->flagsSet(Ctx::REDO_FLAGS_RAW_COLUMN_DATA)) {
+            columnRaw(column->name, data, size);
             return;
         }
-        if (column->guard && !FLAG(REDO_FLAGS_SHOW_GUARD_COLUMNS))
+        if (column->guard && !ctx->flagsSet(Ctx::REDO_FLAGS_SHOW_GUARD_COLUMNS))
             return;
-        if (column->nested && !FLAG(REDO_FLAGS_SHOW_NESTED_COLUMNS))
+        if (column->nested && !ctx->flagsSet(Ctx::REDO_FLAGS_SHOW_NESTED_COLUMNS))
             return;
-        if (column->hidden && !FLAG(REDO_FLAGS_SHOW_HIDDEN_COLUMNS))
+        if (column->hidden && !ctx->flagsSet(Ctx::REDO_FLAGS_SHOW_HIDDEN_COLUMNS))
             return;
-        if (column->unused && !FLAG(REDO_FLAGS_SHOW_UNUSED_COLUMNS))
+        if (column->unused && !ctx->flagsSet(Ctx::REDO_FLAGS_SHOW_UNUSED_COLUMNS))
             return;
 
-        if (length == 0)
+        if (unlikely(size == 0))
             throw RedoLogException(50013, "trying to output null data for column: " + column->name + ", offset: " +
                                           std::to_string(offset));
 
         if (column->storedAsLob) {
-            if (column->type == SYS_COL_TYPE_VARCHAR) {
+            if (column->type == SysCol::TYPE_VARCHAR) {
                 // VARCHAR2 stored as CLOB
-                column->type = SYS_COL_TYPE_CLOB;
-            } else if (column->type == SYS_COL_TYPE_RAW) {
+                column->type = SysCol::TYPE_CLOB;
+            } else if (column->type == SysCol::TYPE_RAW) {
                 // RAW stored as BLOB
-                column->type = SYS_COL_TYPE_BLOB;
+                column->type = SysCol::TYPE_BLOB;
             }
         }
 
         switch (column->type) {
-            case SYS_COL_TYPE_VARCHAR:
-            case SYS_COL_TYPE_CHAR:
-                parseString(data, length, column->charsetId, offset, false, false, false, table->systemTable > 0);
+            case SysCol::TYPE_VARCHAR:
+            case SysCol::TYPE_CHAR:
+                parseString(data, size, column->charsetId, offset, false, false, false, table->systemTable > 0);
                 columnString(column->name);
                 break;
 
-            case SYS_COL_TYPE_NUMBER:
-                parseNumber(data, length, offset);
+            case SysCol::TYPE_NUMBER:
+                parseNumber(data, size, offset);
                 columnNumber(column->name, column->precision, column->scale);
                 break;
 
-            case SYS_COL_TYPE_BLOB:
+            case SysCol::TYPE_BLOB:
                 if (after) {
-                    if (parseLob(lobCtx, data, length, 0, table->obj, offset, false, table->sys)) {
-                        if (column->xmlType && FLAG(REDO_FLAGS_EXPERIMENTAL_XMLTYPE)) {
-                            if (parseXml(xmlCtx, reinterpret_cast<uint8_t*>(valueBuffer), valueLength, offset))
+                    if (parseLob(lobCtx, data, size, 0, table->obj, offset, false, table->sys)) {
+                        if (column->xmlType && ctx->flagsSet(Ctx::REDO_FLAGS_EXPERIMENTAL_XMLTYPE)) {
+                            if (parseXml(xmlCtx, reinterpret_cast<const uint8_t*>(valueBuffer), valueSize, offset))
                                 columnString(column->name);
                             else
-                                columnRaw(column->name, reinterpret_cast<uint8_t*>(valueBufferOld), valueLengthOld);
+                                columnRaw(column->name, reinterpret_cast<const uint8_t*>(valueBufferOld), valueSizeOld);
                         } else
-                            columnRaw(column->name, reinterpret_cast<uint8_t*>(valueBuffer), valueLength);
+                            columnRaw(column->name, reinterpret_cast<const uint8_t*>(valueBuffer), valueSize);
                     }
                 }
                 break;
 
-            case SYS_COL_TYPE_JSON:
-                if (FLAG(REDO_FLAGS_EXPERIMENTAL_JSON))
-                    if (parseLob(lobCtx, data, length, 0, table->obj, offset, false, table->sys))
-                        columnRaw(column->name, reinterpret_cast<uint8_t*>(valueBuffer), valueLength);
+            case SysCol::TYPE_JSON:
+                if (ctx->flagsSet(Ctx::REDO_FLAGS_EXPERIMENTAL_JSON))
+                    if (parseLob(lobCtx, data, size, 0, table->obj, offset, false, table->sys))
+                        columnRaw(column->name, reinterpret_cast<const uint8_t*>(valueBuffer), valueSize);
                 break;
 
-            case SYS_COL_TYPE_CLOB:
+            case SysCol::TYPE_CLOB:
                 if (after) {
-                    if (parseLob(lobCtx, data, length, column->charsetId, table->obj, offset, true, table->systemTable > 0))
+                    if (parseLob(lobCtx, data, size, column->charsetId, table->obj, offset, true, table->systemTable > 0))
                         columnString(column->name);
                 }
                 break;
 
-            case SYS_COL_TYPE_TIMESTAMP_WITH_LOCAL_TZ:
-                if (length != 7 && length != 11)
-                    columnUnknown(column->name, data, length);
+            case SysCol::TYPE_TIMESTAMP_WITH_LOCAL_TZ:
+                if (size != 7 && size != 11)
+                    columnUnknown(column->name, data, size);
                 else {
                     int64_t year;
                     int64_t month = data[2] - 1;    // 0..11
@@ -236,12 +236,12 @@ namespace OpenLogReplicator {
                     }
 
                     uint64_t fraction = 0;
-                    if (length == 11)
+                    if (size == 11)
                         fraction = ctx->read32Big(data + 7);
 
                     if (second < 0 || second > 59 || minute < 0 || minute > 59 || hour < 0 || hour > 23 || day < 0 || day > 30 || month < 0 || month > 11 ||
                             fraction > 999999999) {
-                        columnUnknown(column->name, data, length);
+                        columnUnknown(column->name, data, size);
                     } else {
                         time_t timestamp = ctx->valuesToEpoch(year, month, day, hour, minute, second, metadata->dbTimezone);
                         if (year < 0 && fraction > 0) {
@@ -253,10 +253,10 @@ namespace OpenLogReplicator {
                 }
                 break;
 
-            case SYS_COL_TYPE_DATE:
-            case SYS_COL_TYPE_TIMESTAMP:
-                if (length != 7 && length != 11)
-                    columnUnknown(column->name, data, length);
+            case SysCol::TYPE_DATE:
+            case SysCol::TYPE_TIMESTAMP:
+                if (size != 7 && size != 11)
+                    columnUnknown(column->name, data, size);
                 else {
                     int64_t year;
                     int64_t month = data[2] - 1;    // 0..11
@@ -280,12 +280,12 @@ namespace OpenLogReplicator {
                     }
 
                     uint64_t fraction = 0;
-                    if (length == 11)
+                    if (size == 11)
                         fraction = ctx->read32Big(data + 7);
 
                     if (second < 0 || second > 59 || minute < 0 || minute > 59 || hour < 0 || hour > 23 || day < 0 || day > 30 || month < 0 || month > 11 ||
                             fraction > 999999999) {
-                        columnUnknown(column->name, data, length);
+                        columnUnknown(column->name, data, size);
                     } else {
                         time_t timestamp = ctx->valuesToEpoch(year, month, day, hour, minute, second, 0);
                         if (year < 0 && fraction > 0) {
@@ -297,27 +297,27 @@ namespace OpenLogReplicator {
                 }
                 break;
 
-            case SYS_COL_TYPE_RAW:
-                columnRaw(column->name, data, length);
+            case SysCol::TYPE_RAW:
+                columnRaw(column->name, data, size);
                 break;
 
-            case SYS_COL_TYPE_FLOAT:
-                if (length == 4)
+            case SysCol::TYPE_FLOAT:
+                if (size == 4)
                     columnFloat(column->name, decodeFloat(data));
                 else
-                    columnUnknown(column->name, data, length);
+                    columnUnknown(column->name, data, size);
                 break;
 
-            case SYS_COL_TYPE_DOUBLE:
-                if (length == 8)
+            case SysCol::TYPE_DOUBLE:
+                if (size == 8)
                     columnDouble(column->name, decodeDouble(data));
                 else
-                    columnUnknown(column->name, data, length);
+                    columnUnknown(column->name, data, size);
                 break;
 
-            case SYS_COL_TYPE_TIMESTAMP_WITH_TZ:
-                if (length != 9 && length != 13) {
-                    columnUnknown(column->name, data, length);
+            case SysCol::TYPE_TIMESTAMP_WITH_TZ:
+                if (size != 9 && size != 13) {
+                    columnUnknown(column->name, data, size);
                 } else {
                     int64_t year;
                     int64_t month = data[2] - 1;    // 0..11
@@ -341,7 +341,7 @@ namespace OpenLogReplicator {
                     }
 
                     uint64_t fraction = 0;
-                    if (length == 13)
+                    if (size == 13)
                         fraction = ctx->read32Big(data + 7);
 
                     const char* tz;
@@ -386,7 +386,7 @@ namespace OpenLogReplicator {
                     }
 
                     if (second < 0 || second > 59 || minute < 0 || minute > 59 || hour < 0 || hour > 23 || day < 0 || day > 30 || month < 0 || month > 11) {
-                        columnUnknown(column->name, data, length);
+                        columnUnknown(column->name, data, size);
                     } else {
                         time_t timestamp = ctx->valuesToEpoch(year, month, day, hour, minute, second, 0);
                         if (year < 0 && fraction > 0) {
@@ -398,9 +398,9 @@ namespace OpenLogReplicator {
                 }
                 break;
 
-            case SYS_COL_TYPE_INTERVAL_YEAR_TO_MONTH:
-                if (length != 5 || data[4] < 49 || data[4] > 71)
-                    columnUnknown(column->name, data, length);
+            case SysCol::TYPE_INTERVAL_YEAR_TO_MONTH:
+                if (size != 5 || data[4] < 49 || data[4] > 71)
+                    columnUnknown(column->name, data, size);
                 else {
                     bool minus = false;
                     uint64_t year;
@@ -412,7 +412,7 @@ namespace OpenLogReplicator {
                     }
 
                     if (year > 999999999)
-                        columnUnknown(column->name, data, length);
+                        columnUnknown(column->name, data, size);
                     else {
                         uint64_t month;
                         if (data[4] >= 60)
@@ -424,22 +424,22 @@ namespace OpenLogReplicator {
 
                         char buffer[12];
                         uint64_t len = 0;
-                        valueLength = 0;
+                        valueSize = 0;
 
                         if (minus)
-                            valueBuffer[valueLength++] = '-';
+                            valueBuffer[valueSize++] = '-';
 
                         if (intervalYtmFormat == INTERVAL_YTM_FORMAT_MONTHS || intervalYtmFormat == INTERVAL_YTM_FORMAT_MONTHS_STRING) {
                             uint64_t val = year * 12 + month;
                             if (val == 0) {
-                                valueBuffer[valueLength++] = '0';
+                                valueBuffer[valueSize++] = '0';
                             } else {
                                 while (val) {
                                     buffer[len++] = Ctx::map10(val % 10);
                                     val /= 10;
                                 }
                                 while (len > 0)
-                                    valueBuffer[valueLength++] = buffer[--len];
+                                    valueBuffer[valueSize++] = buffer[--len];
                             }
 
                             if (intervalYtmFormat == INTERVAL_YTM_FORMAT_MONTHS)
@@ -449,28 +449,28 @@ namespace OpenLogReplicator {
                         } else {
                             uint64_t val = year;
                             if (val == 0) {
-                                valueBuffer[valueLength++] = '0';
+                                valueBuffer[valueSize++] = '0';
                             } else {
                                 while (val) {
                                     buffer[len++] = Ctx::map10(val % 10);
                                     val /= 10;
                                 }
                                 while (len > 0)
-                                    valueBuffer[valueLength++] = buffer[--len];
+                                    valueBuffer[valueSize++] = buffer[--len];
                             }
 
                             if (intervalYtmFormat == INTERVAL_YTM_FORMAT_STRING_YM_SPACE)
-                                valueBuffer[valueLength++] = ' ';
+                                valueBuffer[valueSize++] = ' ';
                             else if (intervalYtmFormat == INTERVAL_YTM_FORMAT_STRING_YM_COMMA)
-                                valueBuffer[valueLength++] = ',';
+                                valueBuffer[valueSize++] = ',';
                             else if (intervalYtmFormat == INTERVAL_YTM_FORMAT_STRING_YM_DASH)
-                                valueBuffer[valueLength++] = '-';
+                                valueBuffer[valueSize++] = '-';
 
                             if (month >= 10) {
-                                valueBuffer[valueLength++] = '1';
-                                valueBuffer[valueLength++] = Ctx::map10(month - 10);
+                                valueBuffer[valueSize++] = '1';
+                                valueBuffer[valueSize++] = Ctx::map10(month - 10);
                             } else
-                                valueBuffer[valueLength++] = Ctx::map10(month);
+                                valueBuffer[valueSize++] = Ctx::map10(month);
 
                             columnString(column->name);
                         }
@@ -478,9 +478,9 @@ namespace OpenLogReplicator {
                 }
                 break;
 
-            case SYS_COL_TYPE_INTERVAL_DAY_TO_SECOND:
-                if (length != 11 || data[4] < 37 || data[4] > 83 || data[5] < 1 || data[5] > 119 || data[6] < 1 || data[6] > 119)
-                    columnUnknown(column->name, data, length);
+            case SysCol::TYPE_INTERVAL_DAY_TO_SECOND:
+                if (size != 11 || data[4] < 37 || data[4] > 83 || data[5] < 1 || data[5] > 119 || data[6] < 1 || data[6] > 119)
+                    columnUnknown(column->name, data, size);
                 else {
                     bool minus = false;
                     uint64_t day;
@@ -500,7 +500,7 @@ namespace OpenLogReplicator {
                     }
 
                     if (day > 999999999 || us > 999999999)
-                        columnUnknown(column->name, data, length);
+                        columnUnknown(column->name, data, size);
                     else {
                         int64_t hour;
                         if (data[4] >= 60)
@@ -527,50 +527,50 @@ namespace OpenLogReplicator {
                         }
 
                         char buffer[30];
-                        valueLength = 0;
+                        valueSize = 0;
                         uint64_t val = 0;
                         uint64_t len = 0;
 
                         if (minus)
-                            valueBuffer[valueLength++] = '-';
+                            valueBuffer[valueSize++] = '-';
 
                         if (intervalDtsFormat == INTERVAL_DTS_FORMAT_ISO8601_SPACE || intervalDtsFormat == INTERVAL_DTS_FORMAT_ISO8601_COMMA ||
                             intervalDtsFormat == INTERVAL_DTS_FORMAT_ISO8601_DASH) {
 
                             val = day;
                             if (day == 0) {
-                                valueBuffer[valueLength++] = '0';
+                                valueBuffer[valueSize++] = '0';
                             } else {
                                 while (val) {
                                     buffer[len++] = Ctx::map10(val % 10);
                                     val /= 10;
                                 }
                                 while (len > 0)
-                                    valueBuffer[valueLength++] = buffer[--len];
+                                    valueBuffer[valueSize++] = buffer[--len];
                             }
 
                             if (intervalDtsFormat == INTERVAL_DTS_FORMAT_ISO8601_SPACE)
-                                valueBuffer[valueLength++] = ' ';
+                                valueBuffer[valueSize++] = ' ';
                             else if (intervalDtsFormat == INTERVAL_DTS_FORMAT_ISO8601_COMMA)
-                                valueBuffer[valueLength++] = ',';
+                                valueBuffer[valueSize++] = ',';
                             else if (intervalDtsFormat == INTERVAL_DTS_FORMAT_ISO8601_DASH)
-                                valueBuffer[valueLength++] = '-';
+                                valueBuffer[valueSize++] = '-';
 
-                            valueBuffer[valueLength++] = Ctx::map10(hour / 10);
-                            valueBuffer[valueLength++] = Ctx::map10(hour % 10);
-                            valueBuffer[valueLength++] = ':';
-                            valueBuffer[valueLength++] = Ctx::map10(minute / 10);
-                            valueBuffer[valueLength++] = Ctx::map10(minute % 10);
-                            valueBuffer[valueLength++] = ':';
-                            valueBuffer[valueLength++] = Ctx::map10(second / 10);
-                            valueBuffer[valueLength++] = Ctx::map10(second % 10);
-                            valueBuffer[valueLength++] = '.';
+                            valueBuffer[valueSize++] = Ctx::map10(hour / 10);
+                            valueBuffer[valueSize++] = Ctx::map10(hour % 10);
+                            valueBuffer[valueSize++] = ':';
+                            valueBuffer[valueSize++] = Ctx::map10(minute / 10);
+                            valueBuffer[valueSize++] = Ctx::map10(minute % 10);
+                            valueBuffer[valueSize++] = ':';
+                            valueBuffer[valueSize++] = Ctx::map10(second / 10);
+                            valueBuffer[valueSize++] = Ctx::map10(second % 10);
+                            valueBuffer[valueSize++] = '.';
 
                             for (uint64_t j = 0; j < 9; ++j) {
-                                valueBuffer[valueLength + 8 - j] = Ctx::map10(us % 10);
+                                valueBuffer[valueSize + 8 - j] = Ctx::map10(us % 10);
                                 us /= 10;
                             }
-                            valueLength += 9;
+                            valueSize += 9;
 
                             columnString(column->name);
                         } else {
@@ -596,14 +596,14 @@ namespace OpenLogReplicator {
                             }
 
                             if (val == 0) {
-                                valueBuffer[valueLength++] = '0';
+                                valueBuffer[valueSize++] = '0';
                             } else {
                                 while (val) {
                                     buffer[len++] = Ctx::map10(val % 10);
                                     val /= 10;
                                 }
                                 while (len > 0)
-                                    valueBuffer[valueLength++] = buffer[--len];
+                                    valueBuffer[valueSize++] = buffer[--len];
                             }
 
                             switch (intervalDtsFormat) {
@@ -625,29 +625,29 @@ namespace OpenLogReplicator {
                 }
                 break;
 
-            case SYS_COL_TYPE_BOOLEAN:
-                if (length == 1 && data[0] <= 1) {
-                    valueLength = 0;
-                    valueBuffer[valueLength++] = Ctx::map10(data[0]);
+            case SysCol::TYPE_BOOLEAN:
+                if (size == 1 && data[0] <= 1) {
+                    valueSize = 0;
+                    valueBuffer[valueSize++] = Ctx::map10(data[0]);
                     columnNumber(column->name, column->precision, column->scale);
                 } else {
-                    columnUnknown(column->name, data, length);
+                    columnUnknown(column->name, data, size);
                 }
                 break;
 
-            case SYS_COL_TYPE_UROWID:
-                if (length == 13 && data[0] == 0x01) {
+            case SysCol::TYPE_UROWID:
+                if (size == 13 && data[0] == 0x01) {
                     typeRowId rowId;
                     rowId.decodeFromHex(data + 1);
                     columnRowId(column->name, rowId);
                 } else {
-                    columnUnknown(column->name, data, length);
+                    columnUnknown(column->name, data, size);
                 }
                 break;
 
             default:
                 if (unknownType == UNKNOWN_TYPE_SHOW)
-                    columnUnknown(column->name, data, length);
+                    columnUnknown(column->name, data, size);
         }
     }
 
@@ -714,7 +714,7 @@ namespace OpenLogReplicator {
     }
 
     uint64_t Builder::builderSize() const {
-        return ((messageLength + messagePosition + 7) & 0xFFFFFFFFFFFFFFF8);
+        return ((messageSize + messagePosition + 7) & 0xFFFFFFFFFFFFFFF8);
     }
 
     uint64_t Builder::getMaxMessageMb() const {
@@ -743,28 +743,28 @@ namespace OpenLogReplicator {
     // 0x05010B0B
     void Builder::processInsertMultiple(typeScn scn, typeSeq sequence, time_t timestamp, LobCtx* lobCtx, const XmlCtx* xmlCtx,
                                         const RedoLogRecord* redoLogRecord1, const RedoLogRecord* redoLogRecord2, bool system, bool schema, bool dump) {
-        uint64_t fieldPos = 0;
-        uint64_t fieldPosStart;
+        typePos fieldPos = 0;
+        typePos fieldPosStart;
         typeField fieldNum = 0;
-        uint16_t fieldLength = 0;
-        uint16_t colLength;
+        typeSize fieldSize = 0;
+        typeSize colSize;
         OracleTable* table = metadata->schema->checkTableDict(redoLogRecord1->obj);
         if ((scnFormat & SCN_ALL_COMMIT_VALUE) != 0)
             scn = commitScn;
 
         while (fieldNum < redoLogRecord2->rowData)
-            RedoLogRecord::nextField(ctx, redoLogRecord2, fieldNum, fieldPos, fieldLength, 0x000001);
+            RedoLogRecord::nextField(ctx, redoLogRecord2, fieldNum, fieldPos, fieldSize, 0x000001);
 
         fieldPosStart = fieldPos;
 
-        for (uint64_t r = 0; r < redoLogRecord2->nRow; ++r) {
+        for (typeCC r = 0; r < redoLogRecord2->nRow; ++r) {
             uint64_t pos = 0;
             fieldPos = fieldPosStart;
-            uint8_t jcc = redoLogRecord2->data[fieldPos + pos + 2];
+            typeCC jcc = redoLogRecord2->data()[fieldPos + pos + 2];
             pos = 3;
 
-            if ((redoLogRecord2->op & OP_ROWDEPENDENCIES) != 0) {
-                if (ctx->version < REDO_VERSION_12_2)
+            if ((redoLogRecord2->op & RedoLogRecord::OP_ROWDEPENDENCIES) != 0) {
+                if (ctx->version < RedoLogRecord::REDO_VERSION_12_2)
                     pos += 6;
                 else
                     pos += 8;
@@ -778,47 +778,50 @@ namespace OpenLogReplicator {
 
             for (typeCol i = 0; i < maxI; ++i) {
                 if (i >= jcc) {
-                    colLength = 0;
+                    colSize = 0;
                 } else {
-                    colLength = redoLogRecord2->data[fieldPos + pos];
+                    colSize = redoLogRecord2->data()[fieldPos + pos];
                     ++pos;
-                    if (colLength == 0xFF) {
-                        colLength = 0;
-                    } else if (colLength == 0xFE) {
-                        colLength = ctx->read16(redoLogRecord2->data + fieldPos + pos);
+                    if (colSize == 0xFF) {
+                        colSize = 0;
+                    } else if (colSize == 0xFE) {
+                        colSize = ctx->read16(redoLogRecord2->data() + fieldPos + pos);
                         pos += 2;
                     }
                 }
 
-                if (colLength > 0 || columnFormat >= COLUMN_FORMAT_FULL_INS_DEC || table == nullptr || table->columns[i]->numPk > 0)
-                    valueSet(VALUE_AFTER, i, redoLogRecord2->data + fieldPos + pos, colLength, 0, dump);
-                pos += colLength;
+                if (colSize > 0 || columnFormat >= COLUMN_FORMAT_FULL_INS_DEC || table == nullptr || table->columns[i]->numPk > 0)
+                    valueSet(VALUE_AFTER, i, redoLogRecord2->data() + fieldPos + pos, colSize, 0, dump);
+                pos += colSize;
             }
 
-            if (system && table != nullptr && (table->options & OPTIONS_SYSTEM_TABLE) != 0)
+            if (system && table != nullptr && (table->options & OracleTable::OPTIONS_SYSTEM_TABLE) != 0)
                 systemTransaction->processInsert(table, redoLogRecord2->dataObj, redoLogRecord2->bdba,
-                                                 ctx->read16(redoLogRecord2->data + redoLogRecord2->slotsDelta + r * 2),
+                                                 ctx->read16(redoLogRecord2->data() + redoLogRecord2->slotsDelta + r * 2),
                                                  redoLogRecord1->dataOffset);
 
-            if ((!schema && table != nullptr && (table->options & (OPTIONS_SYSTEM_TABLE | OPTIONS_DEBUG_TABLE)) == 0 &&
-                 table->matchesCondition(ctx, 'i', attributes)) || FLAG(REDO_FLAGS_SHOW_SYSTEM_TRANSACTIONS) || FLAG(REDO_FLAGS_SCHEMALESS)) {
+            if ((!schema && table != nullptr && (table->options & (OracleTable::OPTIONS_SYSTEM_TABLE | OracleTable::OPTIONS_DEBUG_TABLE)) == 0 &&
+                 table->matchesCondition(ctx, 'i', attributes)) || ctx->flagsSet(Ctx::REDO_FLAGS_SHOW_SYSTEM_TRANSACTIONS) ||
+                 ctx->flagsSet(Ctx::REDO_FLAGS_SCHEMALESS)) {
 
                 processInsert(scn, sequence, timestamp, lobCtx, xmlCtx, table, redoLogRecord2->obj, redoLogRecord2->dataObj, redoLogRecord2->bdba,
-                              ctx->read16(redoLogRecord2->data + redoLogRecord2->slotsDelta + r * 2), redoLogRecord1->xid,
+                              ctx->read16(redoLogRecord2->data() + redoLogRecord2->slotsDelta + r * 2), redoLogRecord1->xid,
                               redoLogRecord1->dataOffset);
                 if (ctx->metrics != nullptr) {
-                    if (ctx->metrics->isTagNamesFilter() && table != nullptr && (table->options & (OPTIONS_SYSTEM_TABLE | OPTIONS_DEBUG_TABLE)) == 0)
+                    if (ctx->metrics->isTagNamesFilter() && table != nullptr &&
+                            (table->options & (OracleTable::OPTIONS_SYSTEM_TABLE | OracleTable::OPTIONS_DEBUG_TABLE)) == 0)
                         ctx->metrics->emitDmlOpsInsertOut(1, table->owner, table->name);
-                    else if (ctx->metrics->isTagNamesSys() && table != nullptr && (table->options & OPTIONS_SYSTEM_TABLE) != 0)
+                    else if (ctx->metrics->isTagNamesSys() && table != nullptr && (table->options & OracleTable::OPTIONS_SYSTEM_TABLE) != 0)
                         ctx->metrics->emitDmlOpsInsertOut(1, table->owner, table->name);
                     else
                         ctx->metrics->emitDmlOpsInsertOut(1);
                 }
             } else {
                 if (ctx->metrics != nullptr) {
-                    if (ctx->metrics->isTagNamesFilter() && table != nullptr && (table->options & (OPTIONS_SYSTEM_TABLE | OPTIONS_DEBUG_TABLE)) == 0)
+                    if (ctx->metrics->isTagNamesFilter() && table != nullptr &&
+                            (table->options & (OracleTable::OPTIONS_SYSTEM_TABLE | OracleTable::OPTIONS_DEBUG_TABLE)) == 0)
                         ctx->metrics->emitDmlOpsInsertSkip(1, table->owner, table->name);
-                    else if (ctx->metrics->isTagNamesSys() && table != nullptr && (table->options & OPTIONS_SYSTEM_TABLE) != 0)
+                    else if (ctx->metrics->isTagNamesSys() && table != nullptr && (table->options & OracleTable::OPTIONS_SYSTEM_TABLE) != 0)
                         ctx->metrics->emitDmlOpsInsertSkip(1, table->owner, table->name);
                     else
                         ctx->metrics->emitDmlOpsInsertSkip(1);
@@ -827,35 +830,35 @@ namespace OpenLogReplicator {
 
             valuesRelease();
 
-            fieldPosStart += ctx->read16(redoLogRecord2->data + redoLogRecord2->rowLenghsDelta + r * 2);
+            fieldPosStart += ctx->read16(redoLogRecord2->data() + redoLogRecord2->rowSizesDelta + r * 2);
         }
     }
 
     // 0x05010B0C
     void Builder::processDeleteMultiple(typeScn scn, typeSeq sequence, time_t timestamp, LobCtx* lobCtx, const XmlCtx* xmlCtx,
                                         const RedoLogRecord* redoLogRecord1, const RedoLogRecord* redoLogRecord2, bool system, bool schema, bool dump) {
-        uint64_t fieldPos = 0;
-        uint64_t fieldPosStart;
+        typePos fieldPos = 0;
+        typePos fieldPosStart;
         typeField fieldNum = 0;
-        uint16_t fieldLength = 0;
-        uint16_t colLength;
+        typeSize fieldSize = 0;
+        typeSize colSize;
         OracleTable* table = metadata->schema->checkTableDict(redoLogRecord1->obj);
         if ((scnFormat & SCN_ALL_COMMIT_VALUE) != 0)
             scn = commitScn;
 
         while (fieldNum < redoLogRecord1->rowData)
-            RedoLogRecord::nextField(ctx, redoLogRecord1, fieldNum, fieldPos, fieldLength, 0x000002);
+            RedoLogRecord::nextField(ctx, redoLogRecord1, fieldNum, fieldPos, fieldSize, 0x000002);
 
         fieldPosStart = fieldPos;
 
-        for (uint64_t r = 0; r < redoLogRecord1->nRow; ++r) {
+        for (typeCC r = 0; r < redoLogRecord1->nRow; ++r) {
             uint64_t pos = 0;
             fieldPos = fieldPosStart;
-            uint8_t jcc = redoLogRecord1->data[fieldPos + pos + 2];
+            typeCC jcc = redoLogRecord1->data()[fieldPos + pos + 2];
             pos = 3;
 
-            if ((redoLogRecord1->op & OP_ROWDEPENDENCIES) != 0) {
-                if (ctx->version < REDO_VERSION_12_2)
+            if ((redoLogRecord1->op & RedoLogRecord::OP_ROWDEPENDENCIES) != 0) {
+                if (ctx->version < RedoLogRecord::REDO_VERSION_12_2)
                     pos += 6;
                 else
                     pos += 8;
@@ -869,47 +872,50 @@ namespace OpenLogReplicator {
 
             for (typeCol i = 0; i < maxI; ++i) {
                 if (i >= jcc) {
-                    colLength = 0;
+                    colSize = 0;
                 } else {
-                    colLength = redoLogRecord1->data[fieldPos + pos];
+                    colSize = redoLogRecord1->data()[fieldPos + pos];
                     ++pos;
-                    if (colLength == 0xFF) {
-                        colLength = 0;
-                    } else if (colLength == 0xFE) {
-                        colLength = ctx->read16(redoLogRecord1->data + fieldPos + pos);
+                    if (colSize == 0xFF) {
+                        colSize = 0;
+                    } else if (colSize == 0xFE) {
+                        colSize = ctx->read16(redoLogRecord1->data() + fieldPos + pos);
                         pos += 2;
                     }
                 }
 
-                if (colLength > 0 || columnFormat >= COLUMN_FORMAT_FULL_INS_DEC || table == nullptr || table->columns[i]->numPk > 0)
-                    valueSet(VALUE_BEFORE, i, redoLogRecord1->data + fieldPos + pos, colLength, 0, dump);
-                pos += colLength;
+                if (colSize > 0 || columnFormat >= COLUMN_FORMAT_FULL_INS_DEC || table == nullptr || table->columns[i]->numPk > 0)
+                    valueSet(VALUE_BEFORE, i, redoLogRecord1->data() + fieldPos + pos, colSize, 0, dump);
+                pos += colSize;
             }
 
-            if (system && table != nullptr && (table->options & OPTIONS_SYSTEM_TABLE) != 0)
+            if (system && table != nullptr && (table->options & OracleTable::OPTIONS_SYSTEM_TABLE) != 0)
                 systemTransaction->processDelete(table, redoLogRecord2->dataObj, redoLogRecord2->bdba,
-                                                 ctx->read16(redoLogRecord1->data + redoLogRecord1->slotsDelta + r * 2),
+                                                 ctx->read16(redoLogRecord1->data() + redoLogRecord1->slotsDelta + r * 2),
                                                  redoLogRecord1->dataOffset);
 
-            if ((!schema && table != nullptr && (table->options & (OPTIONS_SYSTEM_TABLE | OPTIONS_DEBUG_TABLE)) == 0 &&
-                 table->matchesCondition(ctx, 'd', attributes)) || FLAG(REDO_FLAGS_SHOW_SYSTEM_TRANSACTIONS) || FLAG(REDO_FLAGS_SCHEMALESS)) {
+            if ((!schema && table != nullptr && (table->options & (OracleTable::OPTIONS_SYSTEM_TABLE | OracleTable::OPTIONS_DEBUG_TABLE)) == 0 &&
+                 table->matchesCondition(ctx, 'd', attributes)) || ctx->flagsSet(Ctx::REDO_FLAGS_SHOW_SYSTEM_TRANSACTIONS) ||
+                 ctx->flagsSet(Ctx::REDO_FLAGS_SCHEMALESS)) {
 
                 processDelete(scn, sequence, timestamp, lobCtx, xmlCtx, table, redoLogRecord2->obj, redoLogRecord2->dataObj, redoLogRecord2->bdba,
-                              ctx->read16(redoLogRecord1->data + redoLogRecord1->slotsDelta + r * 2), redoLogRecord1->xid,
+                              ctx->read16(redoLogRecord1->data() + redoLogRecord1->slotsDelta + r * 2), redoLogRecord1->xid,
                               redoLogRecord1->dataOffset);
                 if (ctx->metrics) {
-                    if (ctx->metrics->isTagNamesFilter() && table != nullptr && (table->options & (OPTIONS_SYSTEM_TABLE | OPTIONS_DEBUG_TABLE)) == 0)
+                    if (ctx->metrics->isTagNamesFilter() && table != nullptr &&
+                            (table->options & (OracleTable::OPTIONS_SYSTEM_TABLE | OracleTable::OPTIONS_DEBUG_TABLE)) == 0)
                         ctx->metrics->emitDmlOpsDeleteOut(1, table->owner, table->name);
-                    else if (ctx->metrics->isTagNamesSys() && table != nullptr && (table->options & OPTIONS_SYSTEM_TABLE) != 0)
+                    else if (ctx->metrics->isTagNamesSys() && table != nullptr && (table->options & OracleTable::OPTIONS_SYSTEM_TABLE) != 0)
                         ctx->metrics->emitDmlOpsDeleteOut(1, table->owner, table->name);
                     else
                         ctx->metrics->emitDmlOpsDeleteOut(1);
                 }
             } else {
                 if (ctx->metrics != nullptr) {
-                    if (ctx->metrics->isTagNamesFilter() && table != nullptr && (table->options & (OPTIONS_SYSTEM_TABLE | OPTIONS_DEBUG_TABLE)) == 0)
+                    if (ctx->metrics->isTagNamesFilter() && table != nullptr &&
+                            (table->options & (OracleTable::OPTIONS_SYSTEM_TABLE | OracleTable::OPTIONS_DEBUG_TABLE)) == 0)
                         ctx->metrics->emitDmlOpsDeleteSkip(1, table->owner, table->name);
-                    else if (ctx->metrics->isTagNamesSys() && table != nullptr && (table->options & OPTIONS_SYSTEM_TABLE) != 0)
+                    else if (ctx->metrics->isTagNamesSys() && table != nullptr && (table->options & OracleTable::OPTIONS_SYSTEM_TABLE) != 0)
                         ctx->metrics->emitDmlOpsDeleteSkip(1, table->owner, table->name);
                     else
                         ctx->metrics->emitDmlOpsDeleteSkip(1);
@@ -918,29 +924,35 @@ namespace OpenLogReplicator {
 
             valuesRelease();
 
-            fieldPosStart += ctx->read16(redoLogRecord1->data + redoLogRecord1->rowLenghsDelta + r * 2);
+            fieldPosStart += ctx->read16(redoLogRecord1->data() + redoLogRecord1->rowSizesDelta + r * 2);
         }
     }
 
-    void Builder::processDml(typeScn scn, typeSeq sequence, time_t timestamp, LobCtx* lobCtx, const XmlCtx* xmlCtx, const RedoLogRecord* redoLogRecord1,
-                             const RedoLogRecord* redoLogRecord2, uint64_t type, bool system, bool schema, bool dump) {
+    void Builder::processDml(typeScn scn, typeSeq sequence, time_t timestamp, LobCtx* lobCtx, const XmlCtx* xmlCtx,
+                             std::deque<const RedoLogRecord*>& redo1, std::deque<const RedoLogRecord*>& redo2,
+                             uint64_t type, bool system, bool schema, bool dump) {
         uint8_t fb;
         typeObj obj;
         typeDataObj dataObj;
         typeDba bdba;
         typeSlot slot;
         const RedoLogRecord* redoLogRecord1p;
-        const RedoLogRecord* redoLogRecord2p;
+        const RedoLogRecord* redoLogRecord2p = nullptr;
+        auto it1 = redo1.cbegin();
+        auto it2 = redo2.cbegin();
+        const RedoLogRecord* redoLogRecord1 = *it1;
+        const RedoLogRecord* redoLogRecord2 = *it2;
+
         OracleTable* table = metadata->schema->checkTableDict(redoLogRecord1->obj);
         if ((scnFormat & SCN_ALL_COMMIT_VALUE) != 0)
             scn = commitScn;
 
         if (type == TRANSACTION_INSERT) {
-            redoLogRecord2p = redoLogRecord2;
-            while (redoLogRecord2p != nullptr) {
-                if ((redoLogRecord2p->fb & FB_F) != 0)
+            for (auto it3 : redo2) {
+                if ((it3->fb & RedoLogRecord::FB_F) != 0) {
+                    redoLogRecord2p = it3;
                     break;
-                redoLogRecord2p = redoLogRecord2p->next;
+                }
             }
 
             if (redoLogRecord2p == nullptr) {
@@ -970,12 +982,12 @@ namespace OpenLogReplicator {
             }
         }
 
-        uint16_t colLength;
+        typeSize colSize;
         uint16_t colNum = 0;
-        uint16_t colShift;
-        uint8_t* nulls;
+        typeSize colShift;
+        const uint8_t* nulls;
         uint8_t bits;
-        uint8_t* colNums;
+        const uint8_t* colNums;
         bool suppPrev = false;
 
         // Data in UNDO
@@ -984,17 +996,17 @@ namespace OpenLogReplicator {
         colNums = nullptr;
 
         while (redoLogRecord1p != nullptr) {
-            uint64_t fieldPos = 0;
+            typePos fieldPos = 0;
             typeField fieldNum = 0;
-            uint16_t fieldLength = 0;
+            typeSize fieldSize = 0;
 
             // UNDO
             if (redoLogRecord1p->rowData > 0) {
-                if ((ctx->trace & TRACE_DML) != 0 || dump) {
-                    ctx->logTrace(TRACE_DML, "UNDO");
+                if (unlikely((ctx->trace & Ctx::TRACE_DML) != 0 || dump)) {
+                    ctx->logTrace(Ctx::TRACE_DML, "UNDO");
                 }
 
-                nulls = redoLogRecord1p->data + redoLogRecord1p->nullsDelta;
+                nulls = redoLogRecord1p->data() + redoLogRecord1p->nullsDelta;
                 bits = 1;
 
                 if (redoLogRecord1p->suppLogBefore > 0)
@@ -1003,21 +1015,21 @@ namespace OpenLogReplicator {
                     colShift = 0;
 
                 if (redoLogRecord1p->colNumsDelta > 0 && !redoLogRecord1p->compressed) {
-                    colNums = redoLogRecord1p->data + redoLogRecord1p->colNumsDelta;
+                    colNums = redoLogRecord1p->data() + redoLogRecord1p->colNumsDelta;
                     colShift -= ctx->read16(colNums);
                 } else {
                     colNums = nullptr;
                 }
-                if (colShift >= ctx->columnLimit)
+                if (unlikely(colShift >= ctx->columnLimit))
                     throw RedoLogException(50059, "table: (obj: " + std::to_string(redoLogRecord1p->obj) + ", dataobj: " +
                                                   std::to_string(redoLogRecord1p->dataObj) + "): invalid column shift: " + std::to_string(colShift) +
                                                   ", before: " + std::to_string(redoLogRecord1p->suppLogBefore) + ", xid: " + lastXid.toString() +
                                                   ", offset: " + std::to_string(redoLogRecord1p->dataOffset));
 
-                while (fieldNum < redoLogRecord1p->rowData - 1)
-                    RedoLogRecord::nextField(ctx, redoLogRecord1p, fieldNum, fieldPos, fieldLength, 0x000003);
+                while (fieldNum < redoLogRecord1p->rowData - 1U)
+                    RedoLogRecord::nextField(ctx, redoLogRecord1p, fieldNum, fieldPos, fieldSize, 0x000003);
 
-                uint64_t cc = redoLogRecord1p->cc;
+                typeCC cc = redoLogRecord1p->cc;
                 if (redoLogRecord1p->compressed) {
                     if (redoLogRecord1p->sizeDelt > 0)
                         cc = 1;
@@ -1026,14 +1038,14 @@ namespace OpenLogReplicator {
                     compressedBefore = true;
                 }
 
-                for (uint64_t i = 0; i < cc; ++i) {
+                for (typeCC i = 0; i < cc; ++i) {
                     if (colNums != nullptr) {
                         colNum = ctx->read16(colNums) + colShift;
                         colNums += 2;
                     } else
                         colNum = i + colShift;
 
-                    if (fieldNum + 1 > redoLogRecord1p->fieldCnt) {
+                    if (unlikely(fieldNum + 1U > redoLogRecord1p->fieldCnt)) {
                         if (table != nullptr)
                             throw RedoLogException(50014, "table: " + table->owner + "." + table->name + ": out of columns (Undo): " +
                                                           std::to_string(colNum) + "/" + std::to_string(static_cast<uint64_t>(redoLogRecord1p->cc)) + ", " +
@@ -1050,21 +1062,21 @@ namespace OpenLogReplicator {
                     }
 
                     fb = 0;
-                    if (i == 0 && (redoLogRecord1p->fb & FB_P) != 0)
-                        fb |= FB_P;
-                    if (i == static_cast<uint64_t>(redoLogRecord1p->cc - 1) && (redoLogRecord1p->fb & FB_N) != 0)
-                        fb |= FB_N;
+                    if (i == 0 && (redoLogRecord1p->fb & RedoLogRecord::FB_P) != 0)
+                        fb |= RedoLogRecord::FB_P;
+                    if (i == redoLogRecord1p->cc - 1U && (redoLogRecord1p->fb & RedoLogRecord::FB_N) != 0)
+                        fb |= RedoLogRecord::FB_N;
 
                     if (table != nullptr) {
                         if (colNum >= table->maxSegCol) {
-                            if (!schema)
+                            if (unlikely(!schema))
                                 throw RedoLogException(50060, "table: " + table->owner + "." + table->name +
                                                               ": referring to invalid column id(" + std::to_string(colNum) + ", xid: " + lastXid.toString() +
                                                               "), offset: " + std::to_string(redoLogRecord1p->dataOffset));
                             break;
                         }
                     } else {
-                        if (colNum >= ctx->columnLimit)
+                        if (unlikely(colNum >= ctx->columnLimit))
                             throw RedoLogException(50060, "table: (obj: " + std::to_string(redoLogRecord1p->obj) + ", dataobj: " +
                                                           std::to_string(redoLogRecord1p->dataObj) + "): referring to invalid column id(" +
                                                           std::to_string(colNum) + "), xid: " + lastXid.toString() + ", offset: " +
@@ -1072,14 +1084,14 @@ namespace OpenLogReplicator {
                     }
 
                     if ((*nulls & bits) != 0)
-                        colLength = 0;
+                        colSize = 0;
                     else {
-                        RedoLogRecord::skipEmptyFields(ctx, redoLogRecord1p, fieldNum, fieldPos, fieldLength);
-                        RedoLogRecord::nextField(ctx, redoLogRecord1p, fieldNum, fieldPos, fieldLength, 0x000004);
-                        colLength = fieldLength;
+                        RedoLogRecord::skipEmptyFields(ctx, redoLogRecord1p, fieldNum, fieldPos, fieldSize);
+                        RedoLogRecord::nextField(ctx, redoLogRecord1p, fieldNum, fieldPos, fieldSize, 0x000004);
+                        colSize = fieldSize;
                     }
 
-                    valueSet(VALUE_BEFORE, colNum, redoLogRecord1p->data + fieldPos, colLength, fb, dump);
+                    valueSet(VALUE_BEFORE, colNum, redoLogRecord1p->data() + fieldPos, colSize, fb, dump);
 
                     bits <<= 1;
                     if (bits == 0) {
@@ -1091,19 +1103,19 @@ namespace OpenLogReplicator {
 
             // Supplemental columns
             if (redoLogRecord1p->suppLogRowData > 0) {
-                if ((ctx->trace & TRACE_DML) != 0 || dump) {
-                    ctx->logTrace(TRACE_DML, "UNDO SUP");
+                if (unlikely((ctx->trace & Ctx::TRACE_DML) != 0 || dump)) {
+                    ctx->logTrace(Ctx::TRACE_DML, "UNDO SUP");
                 }
 
-                while (fieldNum < redoLogRecord1p->suppLogRowData - 1)
-                    RedoLogRecord::nextField(ctx, redoLogRecord1p, fieldNum, fieldPos, fieldLength, 0x000005);
+                while (fieldNum < redoLogRecord1p->suppLogRowData - 1U)
+                    RedoLogRecord::nextField(ctx, redoLogRecord1p, fieldNum, fieldPos, fieldSize, 0x000005);
 
-                colNums = redoLogRecord1p->data + redoLogRecord1p->suppLogNumsDelta;
-                uint8_t* colSizes = redoLogRecord1p->data + redoLogRecord1p->suppLogLenDelta;
+                colNums = redoLogRecord1p->data() + redoLogRecord1p->suppLogNumsDelta;
+                const uint8_t* colSizes = redoLogRecord1p->data() + redoLogRecord1p->suppLogLenDelta;
 
-                for (uint64_t i = 0; i < static_cast<uint64_t>(redoLogRecord1p->suppLogCC); ++i) {
+                for (uint16_t i = 0; i < redoLogRecord1p->suppLogCC; ++i) {
                     colNum = ctx->read16(colNums) - 1;
-                    if (fieldNum + 1 > redoLogRecord1p->fieldCnt) {
+                    if (unlikely(fieldNum + 1U > redoLogRecord1p->fieldCnt)) {
                         if (table != nullptr)
                             throw RedoLogException(50014, "table: " + table->owner + "." + table->name + ": out of columns (supp): " +
                                                           std::to_string(colNum) + "/" + std::to_string(static_cast<uint64_t>(redoLogRecord1p->cc)) + ", " +
@@ -1119,18 +1131,18 @@ namespace OpenLogReplicator {
                                                           ", xid: " + lastXid.toString() + ", offset: " + std::to_string(redoLogRecord1p->dataOffset));
                     }
 
-                    RedoLogRecord::nextField(ctx, redoLogRecord1p, fieldNum, fieldPos, fieldLength, 0x000006);
+                    RedoLogRecord::nextField(ctx, redoLogRecord1p, fieldNum, fieldPos, fieldSize, 0x000006);
 
                     if (table != nullptr) {
                         if (colNum >= table->maxSegCol) {
-                            if (!schema)
+                            if (unlikely(!schema))
                                 throw RedoLogException(50060, "table: " + table->owner + "." + table->name +
                                                               ": referring to invalid column id(" + std::to_string(colNum) + "), xid: " + lastXid.toString() +
                                                               ", offset: " + std::to_string(redoLogRecord1p->dataOffset));
                             break;
                         }
                     } else {
-                        if (colNum >= ctx->columnLimit)
+                        if (unlikely(colNum >= ctx->columnLimit))
                             throw RedoLogException(50060, "table: (obj: " + std::to_string(redoLogRecord1p->obj) + ", dataobj: " +
                                                           std::to_string(redoLogRecord1p->dataObj) + "): referring to invalid column id(" +
                                                           std::to_string(colNum) + "), xid: " + lastXid.toString() + ", offset: " +
@@ -1138,30 +1150,30 @@ namespace OpenLogReplicator {
                     }
 
                     colNums += 2;
-                    colLength = ctx->read16(colSizes);
+                    colSize = ctx->read16(colSizes);
 
-                    if (colLength == 0xFFFF)
-                        colLength = 0;
+                    if (colSize == 0xFFFF)
+                        colSize = 0;
 
                     fb = 0;
-                    if (i == 0 && (redoLogRecord1p->suppLogFb & FB_P) != 0 && suppPrev) {
-                        fb |= FB_P;
+                    if (i == 0 && (redoLogRecord1p->suppLogFb & RedoLogRecord::FB_P) != 0 && suppPrev) {
+                        fb |= RedoLogRecord::FB_P;
                         suppPrev = false;
                     }
-                    if (i == static_cast<uint64_t>(redoLogRecord1p->suppLogCC - 1) && (redoLogRecord1p->suppLogFb & FB_N) != 0) {
-                        fb |= FB_N;
+                    if (i == redoLogRecord1p->suppLogCC - 1U && (redoLogRecord1p->suppLogFb & RedoLogRecord::FB_N) != 0) {
+                        fb |= RedoLogRecord::FB_N;
                         suppPrev = true;
                     }
 
                     // Insert, lock, update, supplemental log data
                     if (redoLogRecord2p->opCode == 0x0B02 || redoLogRecord2p->opCode == 0x0B04 || redoLogRecord2p->opCode == 0x0B05 ||
                         redoLogRecord2p->opCode == 0x0B10)
-                        valueSet(VALUE_AFTER_SUPP, colNum, redoLogRecord1p->data + fieldPos, colLength, fb, dump);
+                        valueSet(VALUE_AFTER_SUPP, colNum, redoLogRecord1p->data() + fieldPos, colSize, fb, dump);
 
                     // Delete, update, overwrite, supplemental log data
                     if (redoLogRecord2p->opCode == 0x0B03 || redoLogRecord2p->opCode == 0x0B05 || redoLogRecord2p->opCode == 0x0B06 ||
                         redoLogRecord2p->opCode == 0x0B10)
-                        valueSet(VALUE_BEFORE_SUPP, colNum, redoLogRecord1p->data + fieldPos, colLength, fb, dump);
+                        valueSet(VALUE_BEFORE_SUPP, colNum, redoLogRecord1p->data() + fieldPos, colSize, fb, dump);
 
                     colSizes += 2;
                 }
@@ -1169,14 +1181,14 @@ namespace OpenLogReplicator {
 
             // REDO
             if (redoLogRecord2p->rowData > 0) {
-                if ((ctx->trace & TRACE_DML) != 0 || dump) {
-                    ctx->logTrace(TRACE_DML, "REDO");
+                if (unlikely((ctx->trace & Ctx::TRACE_DML) != 0 || dump)) {
+                    ctx->logTrace(Ctx::TRACE_DML, "REDO");
                 }
 
                 fieldPos = 0;
                 fieldNum = 0;
-                fieldLength = 0;
-                nulls = redoLogRecord2p->data + redoLogRecord2p->nullsDelta;
+                fieldSize = 0;
+                nulls = redoLogRecord2p->data() + redoLogRecord2p->nullsDelta;
                 bits = 1;
 
                 if (redoLogRecord2p->suppLogAfter > 0)
@@ -1185,22 +1197,22 @@ namespace OpenLogReplicator {
                     colShift = 0;
 
                 if (redoLogRecord2p->colNumsDelta > 0 && !redoLogRecord2p->compressed) {
-                    colNums = redoLogRecord2p->data + redoLogRecord2p->colNumsDelta;
+                    colNums = redoLogRecord2p->data() + redoLogRecord2p->colNumsDelta;
                     colShift -= ctx->read16(colNums);
                 } else {
                     colNums = nullptr;
                 }
-                if (colShift >= ctx->columnLimit) {
+                if (unlikely(colShift >= ctx->columnLimit)) {
                     throw RedoLogException(50059, "table: (obj: " + std::to_string(redoLogRecord2p->obj) + ", dataobj: " +
                                                   std::to_string(redoLogRecord2p->dataObj) + "): invalid column shift: " + std::to_string(colShift) +
                                                   ", before: " + std::to_string(redoLogRecord2p->suppLogBefore) + ", xid: " + lastXid.toString() +
                                                   ", offset: " + std::to_string(redoLogRecord2p->dataOffset));
                 }
 
-                while (fieldNum < redoLogRecord2p->rowData - 1)
-                    RedoLogRecord::nextField(ctx, redoLogRecord2p, fieldNum, fieldPos, fieldLength, 0x000007);
+                while (fieldNum < redoLogRecord2p->rowData - 1U)
+                    RedoLogRecord::nextField(ctx, redoLogRecord2p, fieldNum, fieldPos, fieldSize, 0x000007);
 
-                uint64_t cc = redoLogRecord2p->cc;
+                typeCC cc = redoLogRecord2p->cc;
                 if (redoLogRecord2p->compressed) {
                     if (redoLogRecord2p->sizeDelt > 0)
                         cc = 1;
@@ -1210,8 +1222,8 @@ namespace OpenLogReplicator {
                 } else
                     compressedAfter = false;
 
-                for (uint64_t i = 0; i < cc; ++i) {
-                    if (fieldNum + 1 > redoLogRecord2p->fieldCnt) {
+                for (typeCC i = 0; i < cc; ++i) {
+                    if (unlikely(fieldNum + 1U > redoLogRecord2p->fieldCnt)) {
                         if (table != nullptr)
                             throw RedoLogException(50014, "table: " + table->owner + "." + table->name + ": out of columns (Redo): " +
                                                           std::to_string(colNum) + "/" + std::to_string(static_cast<uint64_t>(redoLogRecord2p->cc)) + ", " +
@@ -1230,12 +1242,12 @@ namespace OpenLogReplicator {
                     }
 
                     fb = 0;
-                    if (i == 0 && (redoLogRecord2p->fb & FB_P) != 0)
-                        fb |= FB_P;
-                    if (i == static_cast<uint64_t>(redoLogRecord2p->cc - 1) && (redoLogRecord2p->fb & FB_N) != 0)
-                        fb |= FB_N;
+                    if (i == 0 && (redoLogRecord2p->fb & RedoLogRecord::FB_P) != 0)
+                        fb |= RedoLogRecord::FB_P;
+                    if (i == static_cast<uint64_t>(redoLogRecord2p->cc - 1U) && (redoLogRecord2p->fb & RedoLogRecord::FB_N) != 0)
+                        fb |= RedoLogRecord::FB_N;
 
-                    RedoLogRecord::nextField(ctx, redoLogRecord2p, fieldNum, fieldPos, fieldLength, 0x000008);
+                    RedoLogRecord::nextField(ctx, redoLogRecord2p, fieldNum, fieldPos, fieldSize, 0x000008);
 
                     if (colNums != nullptr) {
                         colNum = ctx->read16(colNums) + colShift;
@@ -1244,7 +1256,7 @@ namespace OpenLogReplicator {
                         colNum = i + colShift;
 
                     if (table != nullptr) {
-                        if (colNum >= table->maxSegCol) {
+                        if (unlikely(colNum >= table->maxSegCol)) {
                             if (!schema)
                                 throw RedoLogException(50060, "table: " + table->owner + "." + table->name +
                                                               ": referring to invalid column id(" + std::to_string(colNum) +
@@ -1252,7 +1264,7 @@ namespace OpenLogReplicator {
                             break;
                         }
                     } else {
-                        if (colNum >= ctx->columnLimit)
+                        if (unlikely(colNum >= ctx->columnLimit))
                             throw RedoLogException(50060, "table: (obj: " + std::to_string(redoLogRecord2p->obj) + ", dataobj: " +
                                                           std::to_string(redoLogRecord2p->dataObj) + "): referring to invalid column id(" +
                                                           std::to_string(colNum) + "), xid: " + lastXid.toString() + "), offset: " +
@@ -1260,11 +1272,11 @@ namespace OpenLogReplicator {
                     }
 
                     if ((*nulls & bits) != 0)
-                        colLength = 0;
+                        colSize = 0;
                     else
-                        colLength = fieldLength;
+                        colSize = fieldSize;
 
-                    valueSet(VALUE_AFTER, colNum, redoLogRecord2p->data + fieldPos, colLength, fb, dump);
+                    valueSet(VALUE_AFTER, colNum, redoLogRecord2p->data() + fieldPos, colSize, fb, dump);
 
                     bits <<= 1;
                     if (bits == 0) {
@@ -1274,8 +1286,13 @@ namespace OpenLogReplicator {
                 }
             }
 
-            redoLogRecord1p = redoLogRecord1p->next;
-            redoLogRecord2p = redoLogRecord2p->next;
+            it1++;
+            it2++;
+            if (it1 == redo1.cend() || it2 == redo2.cend())
+                break;
+
+            redoLogRecord1p = *it1;
+            redoLogRecord2p = *it2;
         }
 
         typeCol guardPos = -1;
@@ -1295,65 +1312,68 @@ namespace OpenLogReplicator {
                 if ((valuesMerge[base] & mask) != 0) {
 
                     for (uint64_t j = 0; j < 4; ++j) {
-                        uint64_t length = 0;
+                        uint64_t mergeSize = 0;
 
                         if (valuesPart[0][column][j] != nullptr)
-                            length += lengthsPart[0][column][j];
+                            mergeSize += sizesPart[0][column][j];
                         if (valuesPart[1][column][j] != nullptr)
-                            length += lengthsPart[1][column][j];
+                            mergeSize += sizesPart[1][column][j];
                         if (valuesPart[2][column][j] != nullptr)
-                            length += lengthsPart[2][column][j];
+                            mergeSize += sizesPart[2][column][j];
 
-                        if (length == 0)
+                        if (mergeSize == 0)
                             continue;
 
-                        if (values[column][j] != nullptr)
+                        if (unlikely(values[column][j] != nullptr))
                             throw RedoLogException(50015, "value for " + std::to_string(column) + "/" + std::to_string(j) +
                                                           " is already set when merging, xid: " + lastXid.toString() + ", offset: " +
                                                           std::to_string(redoLogRecord1->dataOffset));
 
-                        auto buffer = new uint8_t[length];
+                        auto buffer = new uint8_t[mergeSize];
                         merges[mergesMax++] = buffer;
 
                         values[column][j] = buffer;
-                        lengths[column][j] = length;
+                        sizes[column][j] = mergeSize;
 
                         if (valuesPart[0][column][j] != nullptr) {
-                            memcpy(reinterpret_cast<void*>(buffer), valuesPart[0][column][j], lengthsPart[0][column][j]);
-                            buffer += lengthsPart[0][column][j];
+                            memcpy(reinterpret_cast<void*>(buffer), valuesPart[0][column][j], sizesPart[0][column][j]);
+                            buffer += sizesPart[0][column][j];
                             valuesPart[0][column][j] = nullptr;
                         }
                         if (valuesPart[1][column][j] != nullptr) {
-                            memcpy(reinterpret_cast<void*>(buffer), valuesPart[1][column][j], lengthsPart[1][column][j]);
-                            buffer += lengthsPart[1][column][j];
+                            memcpy(reinterpret_cast<void*>(buffer), valuesPart[1][column][j], sizesPart[1][column][j]);
+                            buffer += sizesPart[1][column][j];
                             valuesPart[1][column][j] = nullptr;
                         }
                         if (valuesPart[2][column][j] != nullptr) {
-                            memcpy(reinterpret_cast<void*>(buffer), valuesPart[2][column][j], lengthsPart[2][column][j]);
-                            buffer += lengthsPart[2][column][j];
+                            memcpy(reinterpret_cast<void*>(buffer), valuesPart[2][column][j], sizesPart[2][column][j]);
+                            buffer += sizesPart[2][column][j];
                             valuesPart[2][column][j] = nullptr;
                         }
                     }
                     valuesMerge[base] &= ~mask;
                 }
 
+                if (table != nullptr && column >= table->maxSegCol)
+                    break;
+
                 if (values[column][VALUE_BEFORE] == nullptr) {
                     bool guardPresent = false;
                     if (guardPos != -1 && table->columns[column]->guardSeg != -1 && values[guardPos][VALUE_BEFORE] != nullptr) {
                         typeCol column2 = table->columns[column]->guardSeg;
                         const uint8_t* guardData = values[guardPos][VALUE_BEFORE];
-                        if (guardData != nullptr && static_cast<int64_t>(column2 / static_cast<typeCol>(8)) < lengths[guardPos][VALUE_BEFORE]) {
+                        if (guardData != nullptr && static_cast<int64_t>(column2 / static_cast<typeCol>(8)) < sizes[guardPos][VALUE_BEFORE]) {
                             guardPresent = true;
                             if ((values[guardPos][VALUE_BEFORE][column2 / 8] & (1 << (column2 & 7))) != 0) {
-                                values[column][VALUE_BEFORE] = reinterpret_cast<uint8_t*>(1);
-                                lengths[column][VALUE_BEFORE] = 0;
+                                values[column][VALUE_BEFORE] = reinterpret_cast<const uint8_t*>(1);
+                                sizes[column][VALUE_BEFORE] = 0;
                             }
                         }
                     }
 
                     if (!guardPresent && values[column][VALUE_BEFORE_SUPP] != nullptr) {
                         values[column][VALUE_BEFORE] = values[column][VALUE_BEFORE_SUPP];
-                        lengths[column][VALUE_BEFORE] = lengths[column][VALUE_BEFORE_SUPP];
+                        sizes[column][VALUE_BEFORE] = sizes[column][VALUE_BEFORE_SUPP];
                     }
                 }
 
@@ -1362,27 +1382,27 @@ namespace OpenLogReplicator {
                     if (guardPos != -1 && table->columns[column]->guardSeg != -1 && values[guardPos][VALUE_AFTER] != nullptr) {
                         typeCol column2 = table->columns[column]->guardSeg;
                         const uint8_t* guardData = values[guardPos][VALUE_AFTER];
-                        if (guardData != nullptr && static_cast<int64_t>(column2 / static_cast<typeCol>(8)) < lengths[guardPos][VALUE_AFTER]) {
+                        if (guardData != nullptr && static_cast<int64_t>(column2 / static_cast<typeCol>(8)) < sizes[guardPos][VALUE_AFTER]) {
                             guardPresent = true;
                             if ((values[guardPos][VALUE_AFTER][column2 / 8] & (1 << (column2 & 7))) != 0) {
-                                values[column][VALUE_AFTER] = reinterpret_cast<uint8_t*>(1);
-                                lengths[column][VALUE_AFTER] = 0;
+                                values[column][VALUE_AFTER] = reinterpret_cast<const uint8_t*>(1);
+                                sizes[column][VALUE_AFTER] = 0;
                             }
                         }
                     }
 
                     if (!guardPresent && values[column][VALUE_AFTER_SUPP] != nullptr) {
                         values[column][VALUE_AFTER] = values[column][VALUE_AFTER_SUPP];
-                        lengths[column][VALUE_AFTER] = lengths[column][VALUE_AFTER_SUPP];
+                        sizes[column][VALUE_AFTER] = sizes[column][VALUE_AFTER_SUPP];
                     }
                 }
             }
         }
 
-        if ((ctx->trace & TRACE_DML) != 0 || dump) {
+        if (unlikely((ctx->trace & Ctx::TRACE_DML) != 0 || dump)) {
             if (table != nullptr) {
-                ctx->logTrace(TRACE_DML, "tab: " + table->owner + "." + table->name + " type: " + std::to_string(type) + " columns: " +
-                                         std::to_string(valuesMax));
+                ctx->logTrace(Ctx::TRACE_DML, "tab: " + table->owner + "." + table->name + " type: " + std::to_string(type) + " columns: " +
+                                              std::to_string(valuesMax));
 
                 baseMax = valuesMax >> 6;
                 for (uint64_t base = 0; base <= baseMax; ++base) {
@@ -1392,19 +1412,21 @@ namespace OpenLogReplicator {
                             break;
                         if ((valuesSet[base] & mask) == 0)
                             continue;
+                        if (column >= table->maxSegCol)
+                            break;
 
-                        ctx->logTrace(TRACE_DML, "DML: " + std::to_string(column + 1) + ":  B(" +
-                                                 std::to_string(values[column][VALUE_BEFORE] != nullptr ? lengths[column][VALUE_BEFORE] : -1) + ") A(" +
-                                                 std::to_string(values[column][VALUE_AFTER] != nullptr ? lengths[column][VALUE_AFTER] : -1) + ") BS(" +
-                                                 std::to_string(values[column][VALUE_BEFORE_SUPP] != nullptr ? lengths[column][VALUE_BEFORE_SUPP] : -1) + ")" +
-                                                 " AS(" + std::to_string(values[column][VALUE_AFTER_SUPP] != nullptr ? lengths[column][VALUE_AFTER_SUPP] : -1) +
-                                                 ") pk: " + std::to_string(table->columns[column]->numPk));
+                        ctx->logTrace(Ctx::TRACE_DML, "DML: " + std::to_string(column + 1) + ":  B(" +
+                                                      std::to_string(values[column][VALUE_BEFORE] != nullptr ? sizes[column][VALUE_BEFORE] : -1) + ") A(" +
+                                                      std::to_string(values[column][VALUE_AFTER] != nullptr ? sizes[column][VALUE_AFTER] : -1) + ") BS(" +
+                                                      std::to_string(values[column][VALUE_BEFORE_SUPP] != nullptr ? sizes[column][VALUE_BEFORE_SUPP] : -1) + ")" +
+                                                      " AS(" + std::to_string(values[column][VALUE_AFTER_SUPP] != nullptr ? sizes[column][VALUE_AFTER_SUPP] : -1) +
+                                                      ") pk: " + std::to_string(table->columns[column]->numPk));
                     }
                 }
             } else {
-                ctx->logTrace(TRACE_DML, "tab: (obj: " + std::to_string(redoLogRecord1->obj) + ", dataobj: " +
-                                         std::to_string(redoLogRecord1->dataObj) + ") type: " + std::to_string(type) + " columns: " +
-                                         std::to_string(valuesMax));
+                ctx->logTrace(Ctx::TRACE_DML, "tab: (obj: " + std::to_string(redoLogRecord1->obj) + ", dataobj: " +
+                                              std::to_string(redoLogRecord1->dataObj) + ") type: " + std::to_string(type) + " columns: " +
+                                              std::to_string(valuesMax));
 
                 baseMax = valuesMax >> 6;
                 for (uint64_t base = 0; base <= baseMax; ++base) {
@@ -1415,10 +1437,10 @@ namespace OpenLogReplicator {
                         if ((valuesSet[base] & mask) == 0)
                             continue;
 
-                        ctx->logTrace(TRACE_DML, "DML: " + std::to_string(column + 1) + ":  B(" +
-                                                 std::to_string(lengths[column][VALUE_BEFORE]) + ") A(" + std::to_string(lengths[column][VALUE_AFTER]) +
-                                                 ") BS(" + std::to_string(lengths[column][VALUE_BEFORE_SUPP]) + ") AS(" +
-                                                 std::to_string(lengths[column][VALUE_AFTER_SUPP]) + ")");
+                        ctx->logTrace(Ctx::TRACE_DML, "DML: " + std::to_string(column + 1) + ":  B(" +
+                                                      std::to_string(sizes[column][VALUE_BEFORE]) + ") A(" + std::to_string(sizes[column][VALUE_AFTER]) +
+                                                      ") BS(" + std::to_string(sizes[column][VALUE_BEFORE_SUPP]) + ") AS(" +
+                                                      std::to_string(sizes[column][VALUE_AFTER_SUPP]) + ")");
                     }
                 }
             }
@@ -1434,104 +1456,115 @@ namespace OpenLogReplicator {
                             break;
                         if ((valuesSet[base] & mask) == 0)
                             continue;
+                        if (table != nullptr && column >= table->maxSegCol)
+                            break;
 
-                        if (table != nullptr && table->columns[column]->nullable == false &&
+                        if (table != nullptr) {
+                            if (table->columns[column]->nullable == false &&
                                 values[column][VALUE_BEFORE] != nullptr && values[column][VALUE_AFTER] != nullptr &&
-                                lengths[column][VALUE_BEFORE] == 0 && lengths[column][VALUE_AFTER] > 0) {
-                            if (!table->columns[column]->nullWarning) {
-                                table->columns[column]->nullWarning = true;
-                                ctx->warning(60037, "observed UPDATE operation for NOT NULL column with NULL value for table " +
-                                        table->owner + "." + table->name + " column " + table->columns[column]->name);
+                                sizes[column][VALUE_BEFORE] == 0 && sizes[column][VALUE_AFTER] > 0) {
+                                if (!table->columns[column]->nullWarning) {
+                                    table->columns[column]->nullWarning = true;
+                                    ctx->warning(60037, "observed UPDATE operation for NOT NULL column with NULL value for table " +
+                                            table->owner + "." + table->name + " column " + table->columns[column]->name);
+                                }
+                                if (ctx->flagsSet(Ctx::REDO_FLAGS_EXPERIMENTAL_NOT_NULL_MISSING)) {
+                                    values[column][VALUE_BEFORE] = values[column][VALUE_AFTER];
+                                    sizes[column][VALUE_BEFORE] = sizes[column][VALUE_AFTER];
+                                    values[column][VALUE_BEFORE_SUPP] = values[column][VALUE_AFTER_SUPP];
+                                    sizes[column][VALUE_BEFORE_SUPP] = sizes[column][VALUE_AFTER_SUPP];
+                                }
                             }
-                            if (FLAG(REDO_FLAGS_EXPERIMENTAL_NOT_NULL_MISSING)) {
-                                values[column][VALUE_BEFORE] = values[column][VALUE_AFTER];
-                                lengths[column][VALUE_BEFORE] = lengths[column][VALUE_AFTER];
-                                values[column][VALUE_BEFORE_SUPP] = values[column][VALUE_AFTER_SUPP];
-                                lengths[column][VALUE_BEFORE_SUPP] = lengths[column][VALUE_AFTER_SUPP];
-                            }
-                        }
 
-                        if (table != nullptr && columnFormat < COLUMN_FORMAT_FULL_UPD) {
-                            if (table->columns[column]->numPk == 0) {
-                                // Remove unchanged column values - only for tables with a defined primary key
-                                if (values[column][VALUE_BEFORE] != nullptr && lengths[column][VALUE_BEFORE] == lengths[column][VALUE_AFTER] &&
-                                    values[column][VALUE_AFTER] != nullptr) {
-                                    if (lengths[column][VALUE_BEFORE] == 0 ||
-                                        memcmp(values[column][VALUE_BEFORE], values[column][VALUE_AFTER], lengths[column][VALUE_BEFORE]) == 0) {
+                            if (columnFormat < COLUMN_FORMAT_FULL_UPD) {
+                                if (table->columns[column]->numPk == 0) {
+                                    // Remove unchanged column values - only for tables with a defined primary key
+                                    if (values[column][VALUE_BEFORE] != nullptr && sizes[column][VALUE_BEFORE] == sizes[column][VALUE_AFTER] &&
+                                        values[column][VALUE_AFTER] != nullptr) {
+                                        if (sizes[column][VALUE_BEFORE] == 0 ||
+                                            memcmp(values[column][VALUE_BEFORE], values[column][VALUE_AFTER], sizes[column][VALUE_BEFORE]) == 0) {
+                                            valuesSet[base] &= ~mask;
+                                            values[column][VALUE_BEFORE] = nullptr;
+                                            values[column][VALUE_BEFORE_SUPP] = nullptr;
+                                            values[column][VALUE_AFTER] = nullptr;
+                                            values[column][VALUE_AFTER_SUPP] = nullptr;
+                                            continue;
+                                        }
+                                    }
+
+                                    // Remove columns additionally present, but null
+                                    if (values[column][VALUE_BEFORE] != nullptr && sizes[column][VALUE_BEFORE] == 0 &&
+                                            values[column][VALUE_AFTER] == nullptr) {
                                         valuesSet[base] &= ~mask;
                                         values[column][VALUE_BEFORE] = nullptr;
                                         values[column][VALUE_BEFORE_SUPP] = nullptr;
-                                        values[column][VALUE_AFTER] = nullptr;
                                         values[column][VALUE_AFTER_SUPP] = nullptr;
                                         continue;
                                     }
-                                }
 
-                                // Remove columns additionally present, but null
-                                if (values[column][VALUE_BEFORE] != nullptr && lengths[column][VALUE_BEFORE] == 0 && values[column][VALUE_AFTER] == nullptr) {
-                                    valuesSet[base] &= ~mask;
-                                    values[column][VALUE_BEFORE] = nullptr;
-                                    values[column][VALUE_BEFORE_SUPP] = nullptr;
-                                    values[column][VALUE_AFTER_SUPP] = nullptr;
-                                    continue;
-                                }
+                                    if (values[column][VALUE_AFTER] != nullptr && sizes[column][VALUE_AFTER] == 0 &&
+                                            values[column][VALUE_BEFORE] == nullptr) {
+                                        valuesSet[base] &= ~mask;
+                                        values[column][VALUE_AFTER] = nullptr;
+                                        values[column][VALUE_BEFORE_SUPP] = nullptr;
+                                        values[column][VALUE_AFTER_SUPP] = nullptr;
+                                        continue;
+                                    }
 
-                                if (values[column][VALUE_AFTER] != nullptr && lengths[column][VALUE_AFTER] == 0 && values[column][VALUE_BEFORE] == nullptr) {
-                                    valuesSet[base] &= ~mask;
-                                    values[column][VALUE_AFTER] = nullptr;
-                                    values[column][VALUE_BEFORE_SUPP] = nullptr;
-                                    values[column][VALUE_AFTER_SUPP] = nullptr;
-                                    continue;
-                                }
+                                } else {
+                                    // Leave null value & propagate
+                                    if (values[column][VALUE_BEFORE] != nullptr && sizes[column][VALUE_BEFORE] == 0 &&
+                                            values[column][VALUE_AFTER] == nullptr) {
+                                        values[column][VALUE_AFTER] = values[column][VALUE_BEFORE];
+                                        sizes[column][VALUE_AFTER] = sizes[column][VALUE_BEFORE];
+                                    }
 
-                            } else {
-                                // Leave null value & propagate
-                                if (values[column][VALUE_BEFORE] != nullptr && lengths[column][VALUE_BEFORE] == 0 && values[column][VALUE_AFTER] == nullptr) {
-                                    values[column][VALUE_AFTER] = values[column][VALUE_BEFORE];
-                                    lengths[column][VALUE_AFTER] = lengths[column][VALUE_BEFORE];
-                                }
-
-                                if (values[column][VALUE_AFTER] != nullptr && lengths[column][VALUE_AFTER] == 0 && values[column][VALUE_BEFORE] == nullptr) {
-                                    values[column][VALUE_BEFORE] = values[column][VALUE_AFTER];
-                                    lengths[column][VALUE_BEFORE] = lengths[column][VALUE_AFTER];
+                                    if (values[column][VALUE_AFTER] != nullptr && sizes[column][VALUE_AFTER] == 0 &&
+                                            values[column][VALUE_BEFORE] == nullptr) {
+                                        values[column][VALUE_BEFORE] = values[column][VALUE_AFTER];
+                                        sizes[column][VALUE_BEFORE] = sizes[column][VALUE_AFTER];
+                                    }
                                 }
                             }
                         }
 
                         // For update assume null for missing columns
                         if (values[column][VALUE_BEFORE] != nullptr && values[column][VALUE_AFTER] == nullptr) {
-                            values[column][VALUE_AFTER] = reinterpret_cast<uint8_t*>(1);
-                            lengths[column][VALUE_AFTER] = 0;
+                            values[column][VALUE_AFTER] = reinterpret_cast<const uint8_t*>(1);
+                            sizes[column][VALUE_AFTER] = 0;
                         }
 
                         if (values[column][VALUE_AFTER] != nullptr && values[column][VALUE_BEFORE] == nullptr) {
-                            values[column][VALUE_BEFORE] = reinterpret_cast<uint8_t*>(1);
-                            lengths[column][VALUE_BEFORE] = 0;
+                            values[column][VALUE_BEFORE] = reinterpret_cast<const uint8_t*>(1);
+                            sizes[column][VALUE_BEFORE] = 0;
                         }
                     }
                 }
             }
 
-            if (system && table != nullptr && (table->options & OPTIONS_SYSTEM_TABLE) != 0)
+            if (system && table != nullptr && (table->options & OracleTable::OPTIONS_SYSTEM_TABLE) != 0)
                 systemTransaction->processUpdate(table, dataObj, bdba, slot, redoLogRecord1->dataOffset);
 
-            if ((!schema && table != nullptr && (table->options & (OPTIONS_SYSTEM_TABLE | OPTIONS_DEBUG_TABLE)) == 0 &&
-                 table->matchesCondition(ctx, 'u', attributes)) || FLAG(REDO_FLAGS_SHOW_SYSTEM_TRANSACTIONS) || FLAG(REDO_FLAGS_SCHEMALESS)) {
+            if ((!schema && table != nullptr && (table->options & (OracleTable::OPTIONS_SYSTEM_TABLE | OracleTable::OPTIONS_DEBUG_TABLE)) == 0 &&
+                 table->matchesCondition(ctx, 'u', attributes)) || ctx->flagsSet(Ctx::REDO_FLAGS_SHOW_SYSTEM_TRANSACTIONS) ||
+                    ctx->flagsSet(Ctx::REDO_FLAGS_SCHEMALESS)) {
 
                 processUpdate(scn, sequence, timestamp, lobCtx, xmlCtx, table, obj, dataObj, bdba, slot, redoLogRecord1->xid, redoLogRecord1->dataOffset);
                 if (ctx->metrics != nullptr) {
-                    if (ctx->metrics->isTagNamesFilter() && table != nullptr && (table->options & (OPTIONS_SYSTEM_TABLE | OPTIONS_DEBUG_TABLE)) == 0)
+                    if (ctx->metrics->isTagNamesFilter() && table != nullptr &&
+                            (table->options & (OracleTable::OPTIONS_SYSTEM_TABLE | OracleTable::OPTIONS_DEBUG_TABLE)) == 0)
                         ctx->metrics->emitDmlOpsUpdateOut(1, table->owner, table->name);
-                    else if (ctx->metrics->isTagNamesSys() && table != nullptr && (table->options & OPTIONS_SYSTEM_TABLE) != 0)
+                    else if (ctx->metrics->isTagNamesSys() && table != nullptr && (table->options & OracleTable::OPTIONS_SYSTEM_TABLE) != 0)
                         ctx->metrics->emitDmlOpsUpdateOut(1, table->owner, table->name);
                     else
                         ctx->metrics->emitDmlOpsUpdateOut(1);
                 }
             } else {
                 if (ctx->metrics != nullptr) {
-                    if (ctx->metrics->isTagNamesFilter() && table != nullptr && (table->options & (OPTIONS_SYSTEM_TABLE | OPTIONS_DEBUG_TABLE)) == 0)
+                    if (ctx->metrics->isTagNamesFilter() && table != nullptr &&
+                            (table->options & (OracleTable::OPTIONS_SYSTEM_TABLE | OracleTable::OPTIONS_DEBUG_TABLE)) == 0)
                         ctx->metrics->emitDmlOpsUpdateSkip(1, table->owner, table->name);
-                    else if (ctx->metrics->isTagNamesSys() && table != nullptr && (table->options & OPTIONS_SYSTEM_TABLE) != 0)
+                    else if (ctx->metrics->isTagNamesSys() && table != nullptr && (table->options & OracleTable::OPTIONS_SYSTEM_TABLE) != 0)
                         ctx->metrics->emitDmlOpsUpdateSkip(1, table->owner, table->name);
                     else
                         ctx->metrics->emitDmlOpsUpdateSkip(1);
@@ -1548,8 +1581,10 @@ namespace OpenLogReplicator {
                         uint64_t mask = static_cast<uint64_t>(1) << (column & 0x3F);
                         if ((valuesSet[base] & mask) == 0) {
                             valuesSet[base] |= mask;
-                            values[column][VALUE_AFTER] = reinterpret_cast<uint8_t*>(1);
-                            lengths[column][VALUE_AFTER] = 0;
+                            values[column][VALUE_AFTER] = reinterpret_cast<const uint8_t*>(1);
+                            sizes[column][VALUE_AFTER] = 0;
+                            if (static_cast<uint64_t>(column) >= valuesMax)
+                                valuesMax = column + 1;
                         }
                     }
                 } else {
@@ -1562,10 +1597,12 @@ namespace OpenLogReplicator {
                                 break;
                             if ((valuesSet[base] & mask) == 0)
                                 continue;
+                            if (column >= table->maxSegCol)
+                                break;
                             if (table->columns[column]->numPk > 0)
                                 continue;
 
-                            if (values[column][VALUE_AFTER] == nullptr || lengths[column][VALUE_AFTER] == 0) {
+                            if (values[column][VALUE_AFTER] == nullptr || sizes[column][VALUE_AFTER] == 0) {
                                 valuesSet[base] &= ~mask;
                                 values[column][VALUE_AFTER] = nullptr;
                                 values[column][VALUE_AFTER_SUPP] = nullptr;
@@ -1579,33 +1616,38 @@ namespace OpenLogReplicator {
                         uint64_t mask = static_cast<uint64_t>(1) << (column & 0x3F);
                         if ((valuesSet[base] & mask) == 0) {
                             valuesSet[base] |= mask;
-                            values[column][VALUE_AFTER] = reinterpret_cast<uint8_t*>(1);
-                            lengths[column][VALUE_AFTER] = 0;
+                            values[column][VALUE_AFTER] = reinterpret_cast<const uint8_t*>(1);
+                            sizes[column][VALUE_AFTER] = 0;
+                            if (static_cast<uint64_t>(column) >= valuesMax)
+                                valuesMax = column + 1;
                         }
                     }
                 }
             }
 
-            if (system && table != nullptr && (table->options & OPTIONS_SYSTEM_TABLE) != 0)
+            if (system && table != nullptr && (table->options & OracleTable::OPTIONS_SYSTEM_TABLE) != 0)
                 systemTransaction->processInsert(table, dataObj, bdba, slot, redoLogRecord1->dataOffset);
 
-            if ((!schema && table != nullptr && (table->options & (OPTIONS_SYSTEM_TABLE | OPTIONS_DEBUG_TABLE)) == 0 &&
-                 table->matchesCondition(ctx, 'i', attributes)) || FLAG(REDO_FLAGS_SHOW_SYSTEM_TRANSACTIONS) || FLAG(REDO_FLAGS_SCHEMALESS)) {
+            if ((!schema && table != nullptr && (table->options & (OracleTable::OPTIONS_SYSTEM_TABLE | OracleTable::OPTIONS_DEBUG_TABLE)) == 0 &&
+                 table->matchesCondition(ctx, 'i', attributes)) || ctx->flagsSet(Ctx::REDO_FLAGS_SHOW_SYSTEM_TRANSACTIONS) ||
+                 ctx->flagsSet(Ctx::REDO_FLAGS_SCHEMALESS)) {
 
                 processInsert(scn, sequence, timestamp, lobCtx, xmlCtx, table, obj, dataObj, bdba, slot, redoLogRecord1->xid, redoLogRecord1->dataOffset);
                 if (ctx->metrics != nullptr) {
-                    if (ctx->metrics->isTagNamesFilter() && table != nullptr && (table->options & (OPTIONS_SYSTEM_TABLE | OPTIONS_DEBUG_TABLE)) == 0)
+                    if (ctx->metrics->isTagNamesFilter() && table != nullptr &&
+                            (table->options & (OracleTable::OPTIONS_SYSTEM_TABLE | OracleTable::OPTIONS_DEBUG_TABLE)) == 0)
                         ctx->metrics->emitDmlOpsInsertOut(1, table->owner, table->name);
-                    else if (ctx->metrics->isTagNamesSys() && table != nullptr && (table->options & OPTIONS_SYSTEM_TABLE) != 0)
+                    else if (ctx->metrics->isTagNamesSys() && table != nullptr && (table->options & OracleTable::OPTIONS_SYSTEM_TABLE) != 0)
                         ctx->metrics->emitDmlOpsInsertOut(1, table->owner, table->name);
                     else
                         ctx->metrics->emitDmlOpsInsertOut(1);
                 }
             } else {
                 if (ctx->metrics != nullptr) {
-                    if (ctx->metrics->isTagNamesFilter() && table != nullptr && (table->options & (OPTIONS_SYSTEM_TABLE | OPTIONS_DEBUG_TABLE)) == 0)
+                    if (ctx->metrics->isTagNamesFilter() && table != nullptr &&
+                            (table->options & (OracleTable::OPTIONS_SYSTEM_TABLE | OracleTable::OPTIONS_DEBUG_TABLE)) == 0)
                         ctx->metrics->emitDmlOpsInsertSkip(1, table->owner, table->name);
-                    else if (ctx->metrics->isTagNamesSys() && table != nullptr && (table->options & OPTIONS_SYSTEM_TABLE) != 0)
+                    else if (ctx->metrics->isTagNamesSys() && table != nullptr && (table->options & OracleTable::OPTIONS_SYSTEM_TABLE) != 0)
                         ctx->metrics->emitDmlOpsInsertSkip(1, table->owner, table->name);
                     else
                         ctx->metrics->emitDmlOpsInsertSkip(1);
@@ -1622,8 +1664,8 @@ namespace OpenLogReplicator {
                         uint64_t mask = static_cast<uint64_t>(1) << (column & 0x3F);
                         if ((valuesSet[base] & mask) == 0) {
                             valuesSet[base] |= mask;
-                            values[column][VALUE_BEFORE] = reinterpret_cast<uint8_t*>(1);
-                            lengths[column][VALUE_BEFORE] = 0;
+                            values[column][VALUE_BEFORE] = reinterpret_cast<const uint8_t*>(1);
+                            sizes[column][VALUE_BEFORE] = 0;
                         }
                     }
                 } else {
@@ -1636,10 +1678,12 @@ namespace OpenLogReplicator {
                                 break;
                             if ((valuesSet[base] & mask) == 0)
                                 continue;
+                            if (column >= table->maxSegCol)
+                                break;
                             if (table->columns[column]->numPk > 0)
                                 continue;
 
-                            if (values[column][VALUE_BEFORE] == nullptr || lengths[column][VALUE_BEFORE] == 0) {
+                            if (values[column][VALUE_BEFORE] == nullptr || sizes[column][VALUE_BEFORE] == 0) {
                                 valuesSet[base] &= ~mask;
                                 values[column][VALUE_BEFORE] = nullptr;
                                 values[column][VALUE_BEFORE_SUPP] = nullptr;
@@ -1653,33 +1697,36 @@ namespace OpenLogReplicator {
                         uint64_t mask = static_cast<uint64_t>(1) << (column & 0x3F);
                         if ((valuesSet[base] & mask) == 0) {
                             valuesSet[base] |= mask;
-                            values[column][VALUE_BEFORE] = reinterpret_cast<uint8_t*>(1);
-                            lengths[column][VALUE_BEFORE] = 0;
+                            values[column][VALUE_BEFORE] = reinterpret_cast<const uint8_t*>(1);
+                            sizes[column][VALUE_BEFORE] = 0;
                         }
                     }
                 }
             }
 
-            if (system && table != nullptr && (table->options & OPTIONS_SYSTEM_TABLE) != 0)
+            if (system && table != nullptr && (table->options & OracleTable::OPTIONS_SYSTEM_TABLE) != 0)
                 systemTransaction->processDelete(table, dataObj, bdba, slot, redoLogRecord1->dataOffset);
 
-            if ((!schema && table != nullptr && (table->options & (OPTIONS_SYSTEM_TABLE | OPTIONS_DEBUG_TABLE)) == 0 &&
-                 table->matchesCondition(ctx, 'd', attributes)) || FLAG(REDO_FLAGS_SHOW_SYSTEM_TRANSACTIONS) || FLAG(REDO_FLAGS_SCHEMALESS)) {
+            if ((!schema && table != nullptr && (table->options & (OracleTable::OPTIONS_SYSTEM_TABLE | OracleTable::OPTIONS_DEBUG_TABLE)) == 0 &&
+                 table->matchesCondition(ctx, 'd', attributes)) || ctx->flagsSet(Ctx::REDO_FLAGS_SHOW_SYSTEM_TRANSACTIONS) ||
+                 ctx->flagsSet(Ctx::REDO_FLAGS_SCHEMALESS)) {
 
                 processDelete(scn, sequence, timestamp, lobCtx, xmlCtx, table, obj, dataObj, bdba, slot, redoLogRecord1->xid, redoLogRecord1->dataOffset);
                 if (ctx->metrics != nullptr) {
-                    if (ctx->metrics->isTagNamesFilter() && table != nullptr && (table->options & (OPTIONS_SYSTEM_TABLE | OPTIONS_DEBUG_TABLE)) == 0)
+                    if (ctx->metrics->isTagNamesFilter() && table != nullptr &&
+                            (table->options & (OracleTable::OPTIONS_SYSTEM_TABLE | OracleTable::OPTIONS_DEBUG_TABLE)) == 0)
                         ctx->metrics->emitDmlOpsDeleteOut(1, table->owner, table->name);
-                    else if (ctx->metrics->isTagNamesSys() && table != nullptr && (table->options & OPTIONS_SYSTEM_TABLE) != 0)
+                    else if (ctx->metrics->isTagNamesSys() && table != nullptr && (table->options & OracleTable::OPTIONS_SYSTEM_TABLE) != 0)
                         ctx->metrics->emitDmlOpsDeleteOut(1, table->owner, table->name);
                     else
                         ctx->metrics->emitDmlOpsDeleteOut(1);
                 }
             } else {
                 if (ctx->metrics != nullptr) {
-                    if (ctx->metrics->isTagNamesFilter() && table != nullptr && (table->options & (OPTIONS_SYSTEM_TABLE | OPTIONS_DEBUG_TABLE)) == 0)
+                    if (ctx->metrics->isTagNamesFilter() && table != nullptr &&
+                            (table->options & (OracleTable::OPTIONS_SYSTEM_TABLE | OracleTable::OPTIONS_DEBUG_TABLE)) == 0)
                         ctx->metrics->emitDmlOpsDeleteSkip(1, table->owner, table->name);
-                    else if (ctx->metrics->isTagNamesSys() && table != nullptr && (table->options & OPTIONS_SYSTEM_TABLE) != 0)
+                    else if (ctx->metrics->isTagNamesSys() && table != nullptr && (table->options & OracleTable::OPTIONS_SYSTEM_TABLE) != 0)
                         ctx->metrics->emitDmlOpsDeleteSkip(1, table->owner, table->name);
                     else
                         ctx->metrics->emitDmlOpsDeleteSkip(1);
@@ -1692,52 +1739,53 @@ namespace OpenLogReplicator {
 
     // 0x18010000
     void Builder::processDdlHeader(typeScn scn, typeSeq sequence, time_t timestamp, const RedoLogRecord* redoLogRecord1) {
-        uint64_t fieldPos = 0;
+        typePos fieldPos = 0;
         typeField fieldNum = 0;
-        uint16_t fieldLength = 0;
+        typeSize fieldSize = 0;
         const OracleTable* table = metadata->schema->checkTableDict(redoLogRecord1->obj);
         if ((scnFormat & SCN_ALL_COMMIT_VALUE) != 0)
             scn = commitScn;
 
-        RedoLogRecord::nextField(ctx, redoLogRecord1, fieldNum, fieldPos, fieldLength, 0x000009);
+        RedoLogRecord::nextField(ctx, redoLogRecord1, fieldNum, fieldPos, fieldSize, 0x000009);
         // Field: 1
-        uint16_t type = ctx->read16(redoLogRecord1->data + fieldPos + 12);
-        uint16_t seq = ctx->read16(redoLogRecord1->data + fieldPos + 18);
-        // uint16_t cnt = ctx->read16(redoLogRecord1->data + fieldPos + 20);
+        uint16_t type = ctx->read16(redoLogRecord1->data() + fieldPos + 12);
+        uint16_t seq = ctx->read16(redoLogRecord1->data() + fieldPos + 18);
+        // uint16_t cnt = ctx->read16(redoLogRecord1->data() + fieldPos + 20);
 
-        if (!RedoLogRecord::nextFieldOpt(ctx, redoLogRecord1, fieldNum, fieldPos, fieldLength, 0x00000A))
+        if (!RedoLogRecord::nextFieldOpt(ctx, redoLogRecord1, fieldNum, fieldPos, fieldSize, 0x00000A))
             return;
         // Field: 2
 
-        if (!RedoLogRecord::nextFieldOpt(ctx, redoLogRecord1, fieldNum, fieldPos, fieldLength, 0x00000B))
+        if (!RedoLogRecord::nextFieldOpt(ctx, redoLogRecord1, fieldNum, fieldPos, fieldSize, 0x00000B))
             return;
         // Field: 3
 
-        if (!RedoLogRecord::nextFieldOpt(ctx, redoLogRecord1, fieldNum, fieldPos, fieldLength, 0x00000C))
+        if (!RedoLogRecord::nextFieldOpt(ctx, redoLogRecord1, fieldNum, fieldPos, fieldSize, 0x00000C))
             return;
         // Field: 4
 
-        if (!RedoLogRecord::nextFieldOpt(ctx, redoLogRecord1, fieldNum, fieldPos, fieldLength, 0x00000D))
+        if (!RedoLogRecord::nextFieldOpt(ctx, redoLogRecord1, fieldNum, fieldPos, fieldSize, 0x00000D))
             return;
         // Field: 5
 
-        if (!RedoLogRecord::nextFieldOpt(ctx, redoLogRecord1, fieldNum, fieldPos, fieldLength, 0x00000E))
+        if (!RedoLogRecord::nextFieldOpt(ctx, redoLogRecord1, fieldNum, fieldPos, fieldSize, 0x00000E))
             return;
         // Field: 6
 
-        if (!RedoLogRecord::nextFieldOpt(ctx, redoLogRecord1, fieldNum, fieldPos, fieldLength, 0x00000F))
+        if (!RedoLogRecord::nextFieldOpt(ctx, redoLogRecord1, fieldNum, fieldPos, fieldSize, 0x00000F))
             return;
         // Field: 7
 
-        if (!RedoLogRecord::nextFieldOpt(ctx, redoLogRecord1, fieldNum, fieldPos, fieldLength, 0x000011))
+        if (!RedoLogRecord::nextFieldOpt(ctx, redoLogRecord1, fieldNum, fieldPos, fieldSize, 0x000011))
             return;
-        // Field: 8
-        uint64_t sqlLength = fieldLength;
-        const char* sqlText = reinterpret_cast<char*>(redoLogRecord1->data) + fieldPos;
 
-        // Track DDL
-        if (FLAG(REDO_FLAGS_SHOW_DDL))
-            processDdl(scn, sequence, timestamp, table, redoLogRecord1->obj, redoLogRecord1->dataObj, type, seq, sqlText, sqlLength - 1);
+        // Field: 8
+        if (ctx->flagsSet(Ctx::REDO_FLAGS_SHOW_DDL)) {
+            // Track DDL
+            typeSize sqlSize = fieldSize;
+            const char* sqlText = reinterpret_cast<const char*>(redoLogRecord1->data()) + fieldPos;
+            processDdl(scn, sequence, timestamp, table, redoLogRecord1->obj, redoLogRecord1->dataObj, type, seq, sqlText, sqlSize - 1U);
+        }
 
         switch (type) {
             case 1:     // create table
@@ -1776,17 +1824,17 @@ namespace OpenLogReplicator {
     }
 
     // Parse binary XML format
-    bool Builder::parseXml(const XmlCtx* xmlCtx, const uint8_t* data, uint64_t length, uint64_t offset) {
+    bool Builder::parseXml(const XmlCtx* xmlCtx, const uint8_t* data, uint64_t size, uint64_t offset) {
         if (valueBufferOld != nullptr) {
             delete[] valueBufferOld;
             valueBufferOld = nullptr;
         }
 
         valueBufferOld = valueBuffer;
-        valueLengthOld = valueLength;
+        valueSizeOld = valueSize;
         valueBuffer = new char[VALUE_BUFFER_MIN];
-        valueBufferLength = VALUE_BUFFER_MIN;
-        valueLength = 0;
+        valueBufferSize = VALUE_BUFFER_MIN;
+        valueSize = 0;
 
         // bool bigint = false;
         std::string out;
@@ -1798,7 +1846,7 @@ namespace OpenLogReplicator {
         bool attributeOpen = false;
         std::string lastTag;
 
-        while (pos < length) {
+        while (pos < size) {
             // Header
             if (data[pos] == 0x9E) {
                 bool xmlDecl = false;
@@ -1807,7 +1855,7 @@ namespace OpenLogReplicator {
                 const char* encoding = "";
 
                 ++pos;
-                if (pos + 2 >= length) {
+                if (pos + 2U >= size) {
                     ctx->warning(60036, "incorrect XML data: header too short, can't read flags");
                     return false;
                 }
@@ -1854,7 +1902,7 @@ namespace OpenLogReplicator {
             // Prolog
             if (data[pos] == 0x9F) {
                 ++pos;
-                if (pos + 1 >= length) {
+                if (pos + 1U >= size) {
                     ctx->warning(60036, "incorrect XML data: prolog too short, can't read version and flags");
                     return false;
                 }
@@ -1867,45 +1915,45 @@ namespace OpenLogReplicator {
                 uint8_t flags0 = data[pos++];
 
                 if ((flags0 & XML_PROLOG_DOCID) != 0) {
-                    if (pos >= length) {
+                    if (pos >= size) {
                         ctx->warning(60036, "incorrect XML data: prolog too short, can't read docid length");
                         return false;
                     }
-                    uint8_t docidLength = data[pos++];
+                    uint8_t docidSize = data[pos++];
 
-                    if (pos + docidLength - 1 >= length) {
+                    if (pos + docidSize - 1U >= size) {
                         ctx->warning(60036, "incorrect XML data: prolog too short, can't read docid data");
                         return false;
                     }
 
-                    pos += docidLength;
+                    pos += docidSize;
                 }
 
                 if ((flags0 & XML_PROLOG_PATHID) != 0) {
-                    if (pos >= length) {
+                    if (pos >= size) {
                         ctx->warning(60036, "incorrect XML data: prolog too short, can't read path length (1)");
                         return false;
                     }
-                    uint8_t pathidLength = data[pos++];
+                    uint8_t pathidSize = data[pos++];
 
-                    if (pos + pathidLength - 1 >= length) {
+                    if (pos + pathidSize - 1U >= size) {
                         ctx->warning(60036, "incorrect XML data: prolog too short, can't read pathid data (1)");
                         return false;
                     }
 
-                    pos += pathidLength;
-                    if (pos >= length) {
+                    pos += pathidSize;
+                    if (pos >= size) {
                         ctx->warning(60036, "incorrect XML data: prolog too short, can't read path length (2)");
                         return false;
                     }
-                    pathidLength = data[pos++];
+                    pathidSize = data[pos++];
 
-                    if (pos + pathidLength - 1 >= length) {
+                    if (pos + pathidSize - 1U >= size) {
                         ctx->warning(60036, "incorrect XML data: prolog too short, can't read pathid data (2)");
                         return false;
                     }
 
-                    pos += pathidLength;
+                    pos += pathidSize;
                 }
 
                 //if ((flags0 & XML_PROLOG_BIGINT) != 0)
@@ -1915,76 +1963,76 @@ namespace OpenLogReplicator {
 
             // tag/parameter
             if (data[pos] == 0xC8 || data[pos] == 0xC9 || (data[pos] >= 0xC0 && data[pos] <= 0xC3)) {
-                uint64_t tagLength = 0;
+                uint64_t tagSize = 0;
                 uint64_t code = 0;
                 bool isSingle = false;
 
                 if (data[pos] == 0xC8) {
                     ++pos;
-                    if (pos + 1 >= length) {
+                    if (pos + 1U >= size) {
                         ctx->warning(60036, "incorrect XML data: string too short, can't read 0xC8 data");
                         return false;
                     }
-                    tagLength = 0;
+                    tagSize = 0;
                     code = ctx->read16Big(data + pos);
                     pos += 2;
                 } else if (data[pos] == 0xC9) {
                     ++pos;
-                    if (pos + 3 >= length) {
+                    if (pos + 3U >= size) {
                         ctx->warning(60036, "incorrect XML data: string too short, can't read 0xC9 data");
                         return false;
                     }
-                    tagLength = 0;
+                    tagSize = 0;
                     code = ctx->read32Big(data + pos);
                     pos += 4;
                 } else if (data[pos] == 0xC0) {
                     ++pos;
-                    if (pos + 2 >= length) {
+                    if (pos + 2U >= size) {
                         ctx->warning(60036, "incorrect XML data: string too short, can't read 0xC0xx data");
                         return false;
                     }
-                    tagLength = data[pos];
-                    if (tagLength == 0x8F)
-                        tagLength = 0;
+                    tagSize = data[pos];
+                    if (tagSize == 0x8F)
+                        tagSize = 0;
                     else
-                        ++tagLength;
+                        ++tagSize;
                     ++pos;
                     code = ctx->read16Big(data + pos);
                     pos += 2;
                     isSingle = true;
                 } else if (data[pos] == 0xC1) {
                     ++pos;
-                    if (pos + 3 >= length) {
+                    if (pos + 3U >= size) {
                         ctx->warning(60036, "incorrect XML data: string too short, can't read 0xC1xxxx data");
                         return false;
                     }
-                    tagLength = ctx->read16Big(data + pos);
+                    tagSize = ctx->read16Big(data + pos);
                     pos += 2;
                     code = ctx->read16Big(data + pos);
                     pos += 2;
                     isSingle = true;
                 } else if (data[pos] == 0xC2) {
                     ++pos;
-                    if (pos + 4 >= length) {
+                    if (pos + 4 >= size) {
                         ctx->warning(60036, "incorrect XML data: string too short, can't read 0xC2xxxxxxxx data");
                         return false;
                     }
-                    tagLength = data[pos];
-                    if (tagLength == 0x8F)
-                        tagLength = 0;
+                    tagSize = data[pos];
+                    if (tagSize == 0x8F)
+                        tagSize = 0;
                     else
-                        ++tagLength;
+                        ++tagSize;
                     ++pos;
                     code = ctx->read32Big(data + pos);
                     pos += 4;
                     isSingle = true;
                 } else if (data[pos] == 0xC3) {
                     ++pos;
-                    if (pos + 5 >= length) {
+                    if (pos + 5U >= size) {
                         ctx->warning(60036, "incorrect XML data: string too short, can't read 0xC3xxxxxxxx data");
                         return false;
                     }
-                    tagLength = ctx->read16Big(data + pos);
+                    tagSize = ctx->read16Big(data + pos);
                     pos += 2;
                     code = ctx->read32Big(data + pos);
                     pos += 4;
@@ -2015,8 +2063,8 @@ namespace OpenLogReplicator {
 
                 std::string tag = xdbXQnMapIdIt->second->localName;
                 // not very efficient, but it's not a problem
-                uint64_t flagsLength = xdbXQnMapIdIt->second->flags.length();
-                bool isAttribute = (((xdbXQnMapIdIt->second->flags.at(flagsLength - 1) - '0') & XDB_XQN_FLAG_ISATTRIBUTE) != 0);
+                uint64_t flagsSize = xdbXQnMapIdIt->second->flags.length();
+                bool isAttribute = (((xdbXQnMapIdIt->second->flags.at(flagsSize - 1) - '0') & XdbXQn::FLAG_ISATTRIBUTE) != 0);
 
                 if (isAttribute) {
                     out = " " + tag + "=\"";
@@ -2039,7 +2087,7 @@ namespace OpenLogReplicator {
                     if (nmSpcPrefixMapIt != nmSpcPrefixMap.end())
                         tag = nmSpcPrefixMapIt->second + ":" + tag;
 
-                    if (tagLength == 0 && !isSingle) {
+                    if (tagSize == 0 && !isSingle) {
                         out = "<" + tag;
                         tagOpen = true;
                     } else
@@ -2048,14 +2096,14 @@ namespace OpenLogReplicator {
                     valueBufferAppend(out.c_str(), out.length());
                 }
 
-                if (tagLength > 0) {
-                    if (pos + tagLength >= length) {
+                if (tagSize > 0) {
+                    if (pos + tagSize >= size) {
                         ctx->warning(60036, "incorrect XML data: string too short, can't read 0xC1xxxx data (2)");
                         return false;
                     }
-                    valueBufferCheck(tagLength, offset);
-                    valueBufferAppend(reinterpret_cast<const char*>(data + pos), tagLength);
-                    pos += tagLength;
+                    valueBufferCheck(tagSize, offset);
+                    valueBufferAppend(reinterpret_cast<const char*>(data + pos), tagSize);
+                    pos += tagSize;
                 }
 
                 if (isAttribute) {
@@ -2079,12 +2127,12 @@ namespace OpenLogReplicator {
             // namespace set
             if (data[pos] == 0xB2) {
                 ++pos;
-                if (pos + 7 >= length) {
+                if (pos + 7 >= size) {
                     ctx->warning(60036, "incorrect XML data: string too short, can't read DD");
                     return false;
                 }
 
-                uint8_t tagLength = data[pos];
+                uint8_t tagSize = data[pos];
                 ++pos;
                 //uint16_t tmp = ctx->read16Big(data + pos);
                 pos += 2;
@@ -2114,9 +2162,9 @@ namespace OpenLogReplicator {
                 }
                 dictNmSpcMap.insert_or_assign(dictId, nmSpcId);
 
-                if (tagLength > 0) {
-                    std::string prefix(reinterpret_cast<const char*>(data + pos), tagLength);
-                    pos += tagLength;
+                if (tagSize > 0) {
+                    std::string prefix(reinterpret_cast<const char*>(data + pos), tagSize);
+                    pos += tagSize;
 
                     auto nmSpcPrefixMapIt = nmSpcPrefixMap.find(nmSpcId);
                     if (nmSpcPrefixMapIt != nmSpcPrefixMap.end()) {
@@ -2133,7 +2181,7 @@ namespace OpenLogReplicator {
             if (data[pos] == 0xDD) {
                 ++pos;
 
-                if (pos + 2 >= length) {
+                if (pos + 2U >= size) {
                     ctx->warning(60036, "incorrect XML data: string too short, can't read DD");
                     return false;
                 }
@@ -2194,22 +2242,22 @@ namespace OpenLogReplicator {
                 }
                 ++pos;
 
-                if (pos + 8 >= length) {
+                if (pos + 8U >= size) {
                     ctx->warning(60036, "incorrect XML data: string too short, can't read 8B");
                     return false;
                 }
 
-                uint64_t tagLength = ctx->read64Big(data + pos);
+                uint64_t tagSize = ctx->read64Big(data + pos);
                 pos += 8;
 
-                if (pos + tagLength >= length) {
+                if (pos + tagSize >= size) {
                     ctx->warning(60036, "incorrect XML data: string too short, can't read 8B data");
                     return false;
                 }
 
-                valueBufferCheck(tagLength, offset);
-                valueBufferAppend(reinterpret_cast<const char*>(data + pos), tagLength);
-                pos += tagLength;
+                valueBufferCheck(tagSize, offset);
+                valueBufferAppend(reinterpret_cast<const char*>(data + pos), tagSize);
+                pos += tagSize;
                 continue;
             }
 
@@ -2220,17 +2268,17 @@ namespace OpenLogReplicator {
                     tagOpen = false;
                 }
 
-                uint64_t tagLength = data[pos] + 1;
+                uint64_t tagSize = data[pos] + 1;
                 ++pos;
 
-                if (pos + tagLength >= length) {
+                if (pos + tagSize >= size) {
                     ctx->warning(60036, "incorrect XML data: string too short, can't read value data");
                     return false;
                 }
 
-                valueBufferCheck(tagLength, offset);
-                valueBufferAppend(reinterpret_cast<const char*>(data + pos), tagLength);
-                pos += tagLength;
+                valueBufferCheck(tagSize, offset);
+                valueBufferAppend(reinterpret_cast<const char*>(data + pos), tagSize);
+                pos += tagSize;
                 continue;
             }
 
@@ -2299,15 +2347,15 @@ namespace OpenLogReplicator {
         if (builderQueue != nullptr) {
             while (builderQueue->id < maxId) {
                 BuilderQueue* nextBuffer = builderQueue->next;
-                ctx->freeMemoryChunk(MEMORY_MODULE_BUILDER, reinterpret_cast<uint8_t*>(builderQueue), true);
+                ctx->freeMemoryChunk(Ctx::MEMORY_MODULE_BUILDER, reinterpret_cast<uint8_t*>(builderQueue), true);
                 builderQueue = nextBuffer;
             }
         }
     }
 
     void Builder::sleepForWriterWork(uint64_t queueSize, uint64_t nanoseconds) {
-        if (ctx->trace & TRACE_SLEEP)
-            ctx->logTrace(TRACE_SLEEP, "Builder:sleepForWriterWork");
+        if (unlikely(ctx->trace & Ctx::TRACE_SLEEP))
+            ctx->logTrace(Ctx::TRACE_SLEEP, "Builder:sleepForWriterWork");
 
         std::unique_lock<std::mutex> lck(mtx);
         if (queueSize > 0)

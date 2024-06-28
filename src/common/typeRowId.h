@@ -27,11 +27,11 @@ along with OpenLogReplicator; see the file LICENSE;  If not see
 #ifndef TYPE_ROWID_H_
 #define TYPE_ROWID_H_
 
-#define ROWID_LENGTH 18
-
 namespace OpenLogReplicator {
     class typeRowId final {
     public:
+        static constexpr uint64_t SIZE = 18;
+
         typeDataObj dataObj;
         typeDba dba;
         typeSlot slot;
@@ -43,8 +43,8 @@ namespace OpenLogReplicator {
         }
 
         explicit typeRowId(const char* rowid) {
-            if (strlen(rowid) != 18)
-                throw DataException(20008, "row ID incorrect length: " + std::string(rowid));
+            if (unlikely(strlen(rowid) != 18))
+                throw DataException(20008, "row ID incorrect size: " + std::string(rowid));
 
             dataObj = (static_cast<typeDataObj>(Ctx::map64R[static_cast<uint8_t>(rowid[0])]) << 30) |
                       (static_cast<typeDataObj>(Ctx::map64R[static_cast<uint8_t>(rowid[1])]) << 24) |
